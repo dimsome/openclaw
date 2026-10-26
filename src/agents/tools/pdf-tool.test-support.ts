@@ -3,7 +3,6 @@ import type { OpenClawConfig } from "../../config/config.js";
 import * as pdfExtract from "../../media/pdf-extract.js";
 import * as webMedia from "../../media/web-media.js";
 import { createEmptyPluginMetadataSnapshot } from "../../plugins/plugin-metadata-empty.test-support.js";
-import type { PluginRegistry } from "../../plugins/registry-types.js";
 import { withTempDir } from "../../test-utils/temp-dir.js";
 import * as authProfiles from "../auth-profiles.js";
 import * as modelAuth from "../model-auth.js";
@@ -27,7 +26,6 @@ type StubPreparedRuntimeSnapshot = {
   agentDir: string;
   config: OpenClawConfig;
   workspaceDir?: string;
-  pluginRegistry?: PluginRegistry;
   createStores: () => { authStorage: unknown; modelRegistry: unknown };
 };
 
@@ -80,15 +78,9 @@ export function createPdfToolInfraStub(completeMock: Mock) {
       provider?: string;
       input?: string[];
       api?: string;
-      modelFound?: boolean;
-      pluginRegistry?: PluginRegistry;
     } = {},
   ) {
-    const {
-      provider = "anthropic",
-      input: modalities = ["text", "document"],
-      pluginRegistry,
-    } = params;
+    const { provider = "anthropic", input: modalities = ["text", "document"] } = params;
     if (provider === "openai") {
       vi.stubEnv("OPENAI_API_KEY", "test-key");
     }
@@ -106,11 +98,8 @@ export function createPdfToolInfraStub(completeMock: Mock) {
       maxTokens: 8192,
       input: modalities,
     };
-    const modelRegistry = createPdfModelRegistry((_provider, id) =>
-      params.modelFound === false ? null : { id, name: id, ...model },
-    );
+    const modelRegistry = createPdfModelRegistry((_provider, id) => ({ id, name: id, ...model }));
     const createStores = () => ({ authStorage, modelRegistry });
-    const release = vi.fn(async () => {});
     vi.spyOn(preparedModelRuntime, "acquireAgentRunPreparedModelRuntime").mockImplementation(
       async ({ agentDir: capturedAgentDir, config, workspaceDir }) =>
         ({
@@ -118,10 +107,9 @@ export function createPdfToolInfraStub(completeMock: Mock) {
             agentDir: capturedAgentDir,
             config,
             workspaceDir,
-            pluginRegistry,
             createStores,
           }),
-          [Symbol.asyncDispose]: release,
+          [Symbol.asyncDispose]: async () => {},
         }) as never,
     );
 
@@ -132,7 +120,7 @@ export function createPdfToolInfraStub(completeMock: Mock) {
     auth.mockResolvedValue({ apiKey: "test-key", mode: "api-key", source: "fixture" });
     vi.spyOn(modelAuth, "requireApiKey").mockReturnValue("test-key");
 
-    return { loadSpy, release, setRuntimeApiKey };
+    return { loadSpy, setRuntimeApiKey };
   }
 
   return { createPdfModelRegistry, stubPdfToolInfra };

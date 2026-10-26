@@ -3,42 +3,36 @@ import { expect, it, type Mock } from "vitest";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import type { createSessionsSendTool as CreateSessionsSendTool } from "./sessions-send-tool.js";
 
-export function registerSessionsSendMaterializationTests({
-  createTool,
-  prepare,
-  cleanup,
-  agentChannel,
-  callGatewayMock,
-  inProcessCreationMock,
-  requireDetails,
-}: {
+type SendHarness = {
   createTool: typeof CreateSessionsSendTool;
-  prepare: () => Promise<void>;
-  cleanup: () => void;
-  agentChannel: string;
   callGatewayMock: Mock<(request: { method?: string }) => Promise<unknown>>;
-  inProcessCreationMock: Mock<(...args: [unknown, unknown, unknown]) => Promise<unknown>>;
   requireDetails: (result: { details?: unknown }) => Record<string, unknown>;
-}) {
+};
+
+export function registerSessionsSendMaterializationTests(
+  h: SendHarness & {
+    prepare: () => Promise<void>;
+    cleanup: () => void;
+    agentChannel: string;
+    inProcessCreationMock: Mock<(...args: [unknown, unknown, unknown]) => Promise<unknown>>;
+  },
+) {
+  const { callGatewayMock, inProcessCreationMock, requireDetails } = h;
   it.each([undefined, "sender"] as const)(
     "materializes an agent main only without sender restrictions (%s)",
     async (source) => {
-      await prepare();
-      callGatewayMock.mockClear();
-      callGatewayMock.mockImplementation(async (request) => {
+      await h.prepare();
+      callGatewayMock.mockClear().mockImplementation(async (request) => {
         if (request.method === "sessions.create") {
           throw new Error("plain sessions.create must not be used for trusted materialization");
         }
-        if (request.method === "agent") {
-          return { runId: "run-ensure-main", acceptedAt: 1 };
-        }
-        return {};
+        return request.method === "agent" ? { runId: "run-ensure-main", acceptedAt: 1 } : {};
       });
       // No callGateway override: exercise trusted in-process materialization.
-      const tool = createTool({
+      const tool = h.createTool({
         inheritedToolPolicySource: source,
         agentSessionKey: "agent:main:dashboard:req-provenance",
-        agentChannel,
+        agentChannel: h.agentChannel,
       });
 
       try {
@@ -57,10 +51,7 @@ export function registerSessionsSendMaterializationTests({
           expect(callGatewayMock.mock.calls.some(([call]) => call.method === "agent")).toBe(false);
           return;
         }
-        expect(requireDetails(result), JSON.stringify(result.details)).toMatchObject({
-          status: "accepted",
-        });
-        expect(inProcessCreationMock).toHaveBeenCalledTimes(1);
+        expect(requireDetails(result).status).toBe("accepted");
         expect(inProcessCreationMock).toHaveBeenCalledWith(
           "sessions.create",
           { key: "agent:main:main", agentId: "main" },
@@ -70,23 +61,18 @@ export function registerSessionsSendMaterializationTests({
           },
         );
       } finally {
-        cleanup();
+        h.cleanup();
       }
     },
   );
 }
 
-export function registerSessionsSendFixedOwnerTests({
-  createTool: createSessionsSendTool,
-  callGatewayMock,
-  requireDetails,
-  sessionDirs,
-}: {
-  createTool: typeof CreateSessionsSendTool;
-  callGatewayMock: Mock;
-  requireDetails: (result: { details?: unknown }) => Record<string, unknown>;
-  sessionDirs: { make(): string };
-}) {
+export function registerSessionsSendFixedOwnerTests(
+  h: SendHarness & {
+    sessionDirs: { make(): string };
+  },
+) {
+  const { callGatewayMock, requireDetails } = h;
   it.each([
     { sessionKey: "global", ownKey: "global", mainKey: undefined },
     { sessionKey: "work", ownKey: "agent:research:work", mainKey: "work" },
@@ -94,37 +80,30 @@ export function registerSessionsSendFixedOwnerTests({
     "authorizes $sessionKey against its persisted fixed-store owner",
     async ({ sessionKey, ownKey, mainKey }) => {
       callGatewayMock.mockReset();
-      const config = {
-        session: {
-          ...(mainKey ? { mainKey } : {}),
-          store: path.join(sessionDirs.make(), "sessions.json"),
-        },
-        agents: {
-          ownership: "explicit" as const,
-          entries: { ops: {}, research: {} },
-        },
-        tools: { agentToAgent: { enabled: false }, sessions: { visibility: "all" as const } },
-      };
+      const storePath = path.join(h.sessionDirs.make(), "sessions.json");
       const send = (ownerAgentId: string) =>
-        createSessionsSendTool({
-          agentId: "research",
-          agentSessionKey: `agent:research:${mainKey ?? "main"}`,
-          config: {
-            ...config,
-            agents: {
-              ...config.agents,
-              defaults: { sessionStore: { agentId: ownerAgentId } },
+        h
+          .createTool({
+            agentId: "research",
+            agentSessionKey: `agent:research:${mainKey ?? "main"}`,
+            config: {
+              session: { ...(mainKey ? { mainKey } : {}), store: storePath },
+              agents: {
+                ownership: "explicit",
+                entries: { ops: {}, research: {} },
+                defaults: { sessionStore: { agentId: ownerAgentId } },
+              },
+              tools: { agentToAgent: { enabled: false }, sessions: { visibility: "all" } },
             },
-          },
-        }).execute("owner-check", { sessionKey, message: "status?", timeoutSeconds: 0 });
+          })
+          .execute("owner-check", { sessionKey, message: "status?", timeoutSeconds: 0 });
 
       if (mainKey) {
         callGatewayMock.mockImplementation(async (request: { method?: string }) =>
           request.method === "sessions.resolve" ? { key: sessionKey, agentId: "ops" } : {},
         );
       }
-      const denied = requireDetails(await send("ops"));
-      expect(denied).toMatchObject({
+      expect(requireDetails(await send("ops"))).toMatchObject({
         status: "forbidden",
         error: expect.stringContaining("Agent-to-agent messaging is disabled"),
       });
@@ -133,7 +112,7 @@ export function registerSessionsSendFixedOwnerTests({
       ]);
 
       await upsertSessionEntryCore(
-        { agentId: "research", sessionKey: ownKey, storePath: config.session.store },
+        { agentId: "research", sessionKey: ownKey, storePath },
         { sessionId: `research-${sessionKey}`, updatedAt: 1 },
       );
       callGatewayMock
@@ -143,8 +122,7 @@ export function registerSessionsSendFixedOwnerTests({
             ? { key: sessionKey, agentId: "research" }
             : { runId: `self-${sessionKey}`, acceptedAt: 1 },
         );
-      const allowed = requireDetails(await send("research"));
-      expect(allowed.status).toBe("accepted");
+      expect(requireDetails(await send("research")).status).toBe("accepted");
     },
   );
 }

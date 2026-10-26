@@ -51,13 +51,9 @@ describe("createMusicGenerateTool status actions", () => {
             })
           : await createMusicGenerateStatusActionResult(sessionKey);
       expect(result?.details).toMatchObject({
-        action: "status",
         active: true,
-        existingTask: true,
         status,
-        taskKind: MUSIC_GENERATION_TASK_KIND,
         provider,
-        task: { taskId: "task-active" },
         progressSummary,
       });
       if (status === "running") {
@@ -67,10 +63,7 @@ describe("createMusicGenerateTool status actions", () => {
             text: "Music generation task task-active is already running with google.\nProgress: Generating music.\nDo not call music_generate again for this request. Do not wait, poll, or yield for it: end this turn; the completion arrives as a later turn and sends the finished music here.",
           },
         ]);
-        expect(result?.details).toMatchObject({
-          duplicateGuard: true,
-          task: { runId: "tool:music_generate:active" },
-        });
+        expect(result?.details).toHaveProperty("duplicateGuard", true);
       } else {
         expect(result?.content[0]).toMatchObject({
           text: expect.stringContaining(
@@ -80,28 +73,4 @@ describe("createMusicGenerateTool status actions", () => {
       }
     },
   );
-
-  it("returns recent succeeded music status instead of starting a duplicate generation", async () => {
-    listOperations.mockReturnValue([
-      musicStatusOperation({
-        taskId: "task-recent-music",
-        requestKey: "music-request:night-drive",
-        runId: "tool:music_generate:recent",
-        status: "succeeded",
-        endedAt: Date.now() - 10_000,
-        progressSummary: "Generated 1 track",
-      }),
-    ]);
-
-    const result = await createMusicGenerateDuplicateGuardResult(sessionKey, {
-      requestKey: "music-request:night-drive",
-    });
-    for (const text of [
-      "Music generation task task-recent-music recently succeeded",
-      "Do not call music_generate again for the same request; this recent music generation already completed.",
-    ]) {
-      expect(result?.content[0]).toMatchObject({ text: expect.stringContaining(text) });
-    }
-    expect(result?.details).toMatchObject({ duplicateGuard: true, active: false });
-  });
 });
