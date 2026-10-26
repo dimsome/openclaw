@@ -43,14 +43,6 @@ function mountPane(
   return { source, subscribe, release, read, lifecycle, present, view };
 }
 
-it("accepts after-commit registration during component setup", () => {
-  const observed: Array<string | null | undefined> = [];
-  mountPane(true, (lifecycle) => {
-    lifecycle.afterCommit(() => void observed.push(document.querySelector("output")?.textContent));
-  });
-  expect(observed).toEqual(["initial"]);
-});
-
 it("releases after-commit resources when deferred work completes", () => {
   const { lifecycle, view } = mountPane();
   const release = vi.fn();
@@ -68,9 +60,12 @@ it("releases after-commit resources when deferred work completes", () => {
   expect(release).toHaveBeenCalledOnce();
 });
 
-it("runs batched callbacks after their DOM commit and fences reentrant requests", () => {
-  const { source, view, lifecycle } = mountPane();
+it("commits setup and batched callbacks before running reentrant requests", () => {
   const observed: Array<string | null> = [];
+  const { source, view, lifecycle } = mountPane(true, (owner) => {
+    owner.afterCommit(() => void observed.push(document.querySelector("output")!.textContent));
+  });
+  expect(observed).toEqual(["initial"]);
   source.set({ text: "committed" });
   lifecycle.afterCommit(() => {
     observed.push(view.container.textContent);
@@ -78,9 +73,9 @@ it("runs batched callbacks after their DOM commit and fences reentrant requests"
     lifecycle.afterCommit(() => void observed.push(view.container.textContent));
   });
   lifecycle.afterCommit(() => void observed.push(view.container.textContent));
-  expect(observed).toEqual([]);
+  expect(observed).toEqual(["initial"]);
   flush();
-  expect(observed).toEqual(["committed", "committed", "next commit"]);
+  expect(observed).toEqual(["initial", "committed", "committed", "next commit"]);
 });
 
 it.each([true, false])(

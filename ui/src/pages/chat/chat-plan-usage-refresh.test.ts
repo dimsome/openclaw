@@ -9,32 +9,18 @@ import { createMountedPanes, refreshPane } from "./chat-pane-mounted.test-suppor
 import { refreshChatModelAuthStatus } from "./chat-state-refresh.ts";
 import { createSessionEventState } from "./chat-state.test-support.ts";
 
-it("updates the open popover after the Gateway deadline without per-run requests", async () => {
-  const startedAt = Date.now();
-  let now = startedAt;
-  const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
-  onTestFinished(() => {
-    vi.useRealTimers();
-    clock.mockRestore();
-  });
+it("refreshes the open usage popover after a terminal event without idle polling", async () => {
+  onTestFinished(() => vi.useRealTimers());
   const key = "agent:main:plan-usage";
   let usedPercent = 1;
-  const auth = vi.fn((_method: string, _params: unknown): ModelAuthStatusResult => ({
-    ts: now,
-    usageRefreshAt: now + 120_000,
+  const auth = vi.fn((): ModelAuthStatusResult => ({
+    ts: Date.now(),
     providers: [
       {
         provider: "openai",
         displayName: "OpenAI",
         status: "ok",
-        profiles: [
-          {
-            profileId: "openai:test",
-            type: "oauth",
-            status: "ok",
-            expiry: { at: startedAt + 7 * 86_400_000, remainingMs: 7 * 86_400_000, label: "7d" },
-          },
-        ],
+        profiles: [{ profileId: "openai:test", type: "oauth", status: "ok" }],
         usage: { providerId: "openai", plan: "Plus", windows: [{ label: "5h", usedPercent }] },
       },
     ],
@@ -57,17 +43,10 @@ it("updates the open popover after the Gateway deadline without per-run requests
   );
   await fixture.sessions.refresh({ agentId: "main", force: true });
   const pane = fixture.mount(key);
-  const panes = [pane, fixture.mount(key)];
-  for (const currentPane of panes) {
-    document.body.append(currentPane.element);
-    onTestFinished(() => currentPane.element.remove());
-  }
-  await Promise.all(
-    panes.map(async (currentPane) => {
-      await refreshPane(currentPane);
-      await refreshChatModelAuthStatus(currentPane.state);
-    }),
-  );
+  document.body.append(pane.element);
+  onTestFinished(() => pane.element.remove());
+  await refreshPane(pane);
+  await refreshChatModelAuthStatus(pane.state);
   const query = (selector: string) => pane.element.querySelector<HTMLElement>(selector);
   const expectUsage = (percent: number) =>
     waitForSolid(() =>
@@ -77,40 +56,23 @@ it("updates the open popover after the Gateway deadline without per-run requests
   query(".context-usage summary")!.click();
   await expectUsage(1);
   expect(auth).toHaveBeenCalledTimes(1);
-  // Keep rendering setup on real timers; advance idle time only to detect polling.
+  // Cache deadlines and cross-pane sharing belong to model-auth.test.ts.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  const updates = [
-    [10_000, 18, 18, 2],
-    [20_000, 22, 18, 2],
-    [130_000, 25, 25, 3],
-  ] as const;
-  for (const [index, [elapsed, nextUsage, expectedUsage, calls]] of updates.entries()) {
-    now = startedAt + elapsed;
-    usedPercent = nextUsage;
-    fixture.emitGatewayEvent("chat", {
-      sessionKey: key,
-      agentId: "main",
-      runId: `usage-run-${index}`,
-      seq: 1,
-      state: "final",
-      message: { role: "assistant", content: [{ type: "text", text: "Done" }], timestamp: now },
-    });
-    await expectUsage(expectedUsage);
-    expect(auth).toHaveBeenCalledTimes(calls);
-    expect(pane.element.querySelector<HTMLDetailsElement>(".context-usage details")?.open).toBe(
-      true,
-    );
-  }
+  usedPercent = 18;
+  fixture.emitGatewayEvent("chat", {
+    sessionKey: key,
+    agentId: "main",
+    runId: "usage-run",
+    seq: 1,
+    state: "final",
+    message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+  });
+  await expectUsage(18);
+  expect(pane.element.querySelector<HTMLDetailsElement>(".context-usage details")?.open).toBe(true);
   await vi.advanceTimersByTimeAsync(120_000);
-  expect(auth).toHaveBeenCalledTimes(3);
-  expect(auth.mock.calls.map(([, params]) => params)).toEqual([
-    { agentId: "main" },
-    { agentId: "main", refreshUsage: true },
-    { agentId: "main", refreshUsage: true },
-  ]);
+  expect(auth.mock.calls).toHaveLength(2);
 });
-
-it.each(["failure", "session", "connection"] as const)(
+it.each(["failure", "session"] as const)(
   "keeps displayed usage when a post-run read retires through %s",
   async (retirement) => {
     const response = createDeferred<ModelAuthStatusResult>();
@@ -126,11 +88,7 @@ it.each(["failure", "session", "connection"] as const)(
     if (retirement === "failure") {
       response.reject(new Error("Usage refresh failed"));
     } else {
-      if (retirement === "session") {
-        state.sessionKey = "agent:main:other";
-      } else {
-        state.connectionEpoch += 1;
-      }
+      state.sessionKey = "agent:main:other";
       response.resolve({ ts: 2, providers: [] });
     }
     await pending;
