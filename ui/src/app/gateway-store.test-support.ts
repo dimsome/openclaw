@@ -1,4 +1,5 @@
 // Native client observation shared by the Gateway store fixtures.
+import { expectDefined } from "@openclaw/normalization-core";
 import { onTestFinished, vi } from "vitest";
 import * as browserGateway from "../api/gateway.ts";
 import type {
@@ -41,10 +42,10 @@ function captureGatewayClients(): void {
 }
 
 function observeGatewayClient(client: GatewayBrowserClient) {
-  const testOptions = constructedOptions.get(client);
-  if (!testOptions) {
-    throw new Error("expected a natively constructed Gateway fixture client");
-  }
+  const testOptions = expectDefined(
+    constructedOptions.get(client),
+    "native Gateway fixture client",
+  );
   // These fixtures drive admission callbacks, not the socket recovery handshake.
   Object.defineProperties(client, {
     recoveryScope: { configurable: true, writable: true, value: undefined },
@@ -98,26 +99,12 @@ export function createGatewayStoreTestStore(
       }
     }),
   );
-  const current = () => {
-    const client = clients.at(-1);
-    if (!client) {
-      throw new Error("expected a gateway client");
-    }
-    return client;
-  };
-  return { gateway, clients, current };
+  return { gateway, clients, current: () => expectDefined(clients.at(-1), "gateway client") };
 }
 
 export function stubGatewayStoreTestGlobals() {
   vi.stubGlobal("localStorage", createStorageMock());
   vi.stubGlobal("sessionStorage", createStorageMock());
   vi.stubGlobal("navigator", { language: "en-US" } as Navigator);
-  vi.stubGlobal("location", {
-    protocol: "http:",
-    host: "127.0.0.1:18789",
-    hostname: "127.0.0.1",
-    origin: "http://127.0.0.1:18789",
-    pathname: "/",
-    href: "http://127.0.0.1:18789/",
-  } as Location);
+  vi.stubGlobal("location", new URL("http://127.0.0.1:18789/"));
 }

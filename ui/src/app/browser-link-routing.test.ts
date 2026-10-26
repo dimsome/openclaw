@@ -51,7 +51,7 @@ it("preserves existing browser behavior by default", () => {
   expect(dispatchLink("https://example.com/report").defaultPrevented).toBe(false);
 });
 
-it("routes primary, modified, middle, and new-window links to new browser-panel tabs", () => {
+it("routes browser-tab clicks but leaves cancelled navigation alone", () => {
   const requests = startBrowserLinkRouting();
   const cases: Array<[string, MouseEventInit?, Record<string, string>?, boolean?]> = [
     ["primary"],
@@ -65,13 +65,8 @@ it("routes primary, modified, middle, and new-window links to new browser-panel 
       dispatchLink(`https://example.com/${name}`, init, attributes, middle).defaultPrevented,
     ).toBe(true);
   }
-  expect(requests).toEqual(
-    cases.map(([name]) => ({ open: true, url: `https://example.com/${name}` })),
-  );
-});
-
-it("preserves link handlers that cancel navigation", () => {
-  const requests = startBrowserLinkRouting();
+  const routed = cases.map(([name]) => ({ open: true, url: `https://example.com/${name}` }));
+  expect(requests).toEqual(routed);
   const anchor = appendLink("https://example.com/handled");
   anchor.addEventListener("click", (event) => event.preventDefault());
   const event = new MouseEvent("click", { bubbles: true, cancelable: true, composed: true });
@@ -79,7 +74,7 @@ it("preserves link handlers that cancel navigation", () => {
   anchor.dispatchEvent(event);
 
   expect(event.defaultPrevented).toBe(true);
-  expect(requests).toEqual([]);
+  expect(requests).toEqual(routed);
 });
 
 it.each([false, true])(

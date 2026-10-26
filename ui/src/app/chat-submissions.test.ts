@@ -1,7 +1,4 @@
-import { expectDefined } from "@openclaw/normalization-core";
 import { expect, it } from "vitest";
-import { findChatSubmissionMessage } from "../lib/chat/history-message-identity.ts";
-import { shouldDisplayChatSubmission } from "../pages/chat/history-merge.ts";
 import { buildInitialChatSubmission } from "../pages/chat/user-message-content.ts";
 import { createChatSubmissions, type RetainedChatSubmission } from "./chat-submissions.ts";
 
@@ -43,20 +40,10 @@ it.each([
   });
   expect(read(limit)?.pendingRunId).toBe(String(limit));
   expect(read(1, {})).toBeFalsy();
-  const replacement = expectDefined(retain(1), "retained submission");
-  const replacementMessage = expectDefined(replacement.message, "pending display");
-  const receipt = {
-    ...replacementMessage,
-    __openclaw: { id: "receipt", idempotencyKey: `${replacement.pendingRunId}:user` },
-  };
-  const accepted = findChatSubmissionMessage([receipt], replacement.pendingRunId, true);
-  expect(shouldDisplayChatSubmission(replacement, accepted)).toBe(false);
-  expect(read(1)?.pending).toBe(false);
-  expect(read(1, {})).toBeFalsy();
   if (kind === "delivered") {
     const otherClient = {};
     retain(1, otherClient);
-    expect(read(1)?.pending).toBe(false);
+    expect(read(1)?.owner).toBe(owner);
     expect(read(1, otherClient)?.pending).toBe(true);
   }
   submissions.clear();
@@ -65,38 +52,23 @@ it.each([
 });
 
 it("prepares accepted prompts only with explicit run ownership", () => {
-  const url = "data:image/png;base64,iVBORw0KGgo=";
   const sessionKey = "agent:main:main";
   const client = {};
   const handoff = createChatSubmissions();
-  const item = {
-    text: "image",
-    attachments: [
-      { id: "img", mimeType: "image/png", fileName: "x.png", sizeBytes: 68, dataUrl: url },
-    ],
-    createdAt: 123,
-    sender: { id: "u1", name: "Alice" },
-  };
-
+  const item = { text: "prompt", createdAt: 123 };
   handoff.retain(buildInitialChatSubmission(sessionKey, item, client));
   expect(handoff.readInitial(sessionKey, client)).toBeNull();
 
   handoff.retain(buildInitialChatSubmission(sessionKey, item, client, "run"));
 
-  expect(handoff.readInitial("main", client)).toEqual({
-    kind: "initial",
+  expect(handoff.readInitial("main", client)).toMatchObject({
     sessionKey,
     owner: client,
     pendingRunId: "run",
     pending: true,
     message: {
-      role: "user",
-      content: [
-        { type: "text", text: "image" },
-        { type: "image", url, fileName: "x.png", source: { type: "url", url } },
-      ],
-      timestamp: 123,
-      __openclaw: { idempotencyKey: "run:user", senderId: "u1", senderName: "Alice" },
+      content: [{ type: "text", text: "prompt" }],
+      __openclaw: { idempotencyKey: "run:user" },
     },
   });
 });

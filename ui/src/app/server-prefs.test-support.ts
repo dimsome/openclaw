@@ -2,7 +2,6 @@ import { afterEach, beforeEach, vi } from "vitest";
 import type { UsersPrefsSetParams } from "../../../packages/gateway-protocol/src/schema/users.ts";
 import { GatewayRequestError } from "../api/gateway-connect-errors.ts";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
-import type { RuntimeConfigExternalMutationOptions } from "../lib/config/config-gateway-operations.ts";
 import { createStorageMock } from "../test-helpers/storage.ts";
 import { applyServerUiPrefs, refreshProfileAppearancePrefs } from "./server-prefs-reconcile.ts";
 import { pushServerUiPrefs, resetServerUiPrefsSync } from "./server-prefs.ts";
@@ -40,13 +39,10 @@ export function createServerPrefsWriter(
   canPatch = true,
 ): Parameters<typeof pushServerUiPrefs>[0] {
   const client = { request, gatewayUrl, connected } as unknown as GatewayBrowserClient;
-  const writer = {
+  const writer: Parameters<typeof pushServerUiPrefs>[0] = {
     canPatch,
     state: { client, connected },
-    runExternalMutation: async <T>(
-      task: (client: GatewayBrowserClient) => Promise<T>,
-      options?: RuntimeConfigExternalMutationOptions<T>,
-    ) => {
+    runExternalMutation: async (task, options) => {
       if (!writer.state.connected) {
         return {
           ok: false as const,

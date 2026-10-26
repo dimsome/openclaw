@@ -20,7 +20,6 @@ const mainRecord = () =>
     groups: [{ name: "Main private group", position: 0 }],
     sectionOrder: ["Main private group"],
   });
-
 const replies = new Map<string, () => unknown>([
   ["agents.list", () => mainRecord().agents],
   ["sessions.groups.list", () => ({ groups: [], sectionOrder: [] })],
