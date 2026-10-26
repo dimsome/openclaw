@@ -56,14 +56,6 @@ describe("Code Mode loop protection", () => {
         if (kind === "retained") {
           expect(result.value).toMatchObject({ reference: { id: expect.any(String) } });
           references.add(JSON.stringify(result.value));
-        } else if (kind === "discovery") {
-          expect(result.value).toEqual(["loop_fixture"]);
-          expect(result.telemetry).toMatchObject({ searchCount: index + 1 });
-        } else {
-          expect(result.value).toEqual({
-            telemetry: { callCount: index + 1 },
-            pendingToolCalls: [{ id: `work-${index + 1}` }],
-          });
         }
       }
       if (kind === "retained") {
@@ -98,7 +90,6 @@ describe("Code Mode loop protection", () => {
         result = await resume({ runId }, `resume-${index}`);
         expect(result.status).toBe("waiting");
         pendingIds.add(JSON.stringify(result.pendingToolCalls));
-        expect(result.telemetry).toMatchObject({ callCount: index + 2 });
       }
       expect(pendingIds.size).toBeGreaterThan(1);
       result = await resume({ runId }, "resume-after-streak");

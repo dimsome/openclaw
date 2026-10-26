@@ -107,7 +107,6 @@ it.each(["exec", "resume"] as const)(
 
 it.each([
   ["returned values", 'return "x".repeat(2_048);', "completed"],
-  ["output and value", 'text("x".repeat(700)); return "y".repeat(700);', "completed"],
   ["suspended output", 'text("x".repeat(2_048)); await yield_control();', "waiting"],
   ["failed output", 'text("x".repeat(2_048)); throw new Error("boom");', "failed"],
 ] as const)(

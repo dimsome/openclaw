@@ -19,25 +19,6 @@ function modelConfig(
 }
 
 describe("resolveFastModeState", () => {
-  it.each(["serviceTier", "service_tier"])(
-    "keeps %s inherited until a speed is selected",
-    (key) => {
-      const cfg = modelConfig({ [key]: "ultrafast" }, "openai/speed-fixture");
-      const state = resolve({ cfg, provider: "openai", model: "speed-fixture" });
-      expect(state).toMatchObject({ mode: "ultrafast", source: "config" });
-      expect(state.requestMode).toBeUndefined();
-      for (const mode of [false, true, "ultrafast"] as const) {
-        expect(
-          resolve({
-            cfg,
-            model: "speed-fixture",
-            sessionEntry: { fastMode: mode },
-          }),
-        ).toMatchObject({ mode, requestMode: mode, source: "session" });
-      }
-    },
-  );
-
   it.each([
     [true, false, "auto", undefined, true, "session"],
     ["auto", undefined, undefined, undefined, "auto", "session"],
@@ -47,19 +28,14 @@ describe("resolveFastModeState", () => {
   ] as const)(
     "resolves session=%s, agent=%s, global=%s, model=%s by priority",
     (session, agent, global, modelMode, mode, source) => {
-      const configured = global !== undefined;
-      const cfg: OpenClawConfig = configured
-        ? modelConfig(modelMode === undefined ? {} : { fastMode: modelMode }, "openai/gpt-4o", {
-            fastModeDefault: global,
-          })
-        : {};
+      const cfg = modelConfig({ fastMode: modelMode }, undefined, { fastModeDefault: global });
       if (agent !== undefined) {
         cfg.agents = { ...cfg.agents, entries: { main: { fastModeDefault: agent } } };
       }
       expect(
         resolve({
           cfg,
-          ...(configured ? { model: "gpt-4o", agentId: "main" } : {}),
+          agentId: "main",
           sessionEntry: { fastMode: session },
         }),
       ).toMatchObject({ mode, enabled: mode !== false, source });

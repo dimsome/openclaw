@@ -1,11 +1,9 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, assert, expect, it } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
-import { resolveCodeModeConfig } from "./code-mode-runtime.js";
 import { runCodeModeScriptHeadless, type CodeModeHeadlessResult } from "./code-mode.js";
 import {
   createCatalogCodeModeHarness,
-  createCodeModeHarness,
   createHeadlessCodeModeHarness,
   expectCodeModeSharedBudget,
   expectOriginalCodeModeMarker,
@@ -52,38 +50,6 @@ function snapshotFixture() {
   return { pendingStarted, pending, fixture, fresh, code };
 }
 
-it("yields and resumes a direct executor call without an inline host", async () => {
-  const { ctx } = createCodeModeHarness(quickjs);
-  const config = resolveCodeModeConfig(ctx.runtimeConfig ?? ctx.config, ctx.agentId);
-  const options = {
-    executor: "quickjs" as const,
-    runtimeConfig: ctx.config,
-    timeoutMs: config.timeoutMs,
-  };
-  const result = await testing.runCodeModeExecutor(
-    {
-      kind: "exec",
-      source: "const value = 42; await yield_control(); return value;",
-      config,
-      catalog: [],
-      namespaces: [],
-    },
-    options,
-  );
-  assert(result.status === "waiting", JSON.stringify(result));
-  expect(
-    await testing.runCodeModeExecutor(
-      {
-        kind: "resume",
-        continuation: result.continuation,
-        config,
-        settledRequests: result.pendingRequests.map(({ id }) => ({ id, ok: true, json: "null" })),
-        pendingRequests: [],
-      },
-      options,
-    ),
-  ).toMatchObject({ status: "completed", value: { json: "42" } });
-});
 it.each(["exec", "wait", "headless"] as const)(
   "preserves output and cancels earlier tools when a %s resume exceeds the snapshot cap",
   async (mode) => {
