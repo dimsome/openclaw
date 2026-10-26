@@ -10,12 +10,8 @@ import {
   patchScopedAccountConfig,
 } from "./setup-helpers.js";
 
-function asConfig(value: unknown): OpenClawConfig {
-  return value as OpenClawConfig;
-}
-
 function config(channel: string, section: Record<string, unknown>): OpenClawConfig {
-  return asConfig({ channels: { [channel]: section } });
+  return { channels: { [channel]: section } } as OpenClawConfig;
 }
 
 beforeEach(() => {
@@ -47,40 +43,39 @@ it("patchScopedAccountConfig clears only default-account credentials before repl
   });
 });
 
-it("migrates base name into the default account before patching a named account", () => {
+it.each([
+  [
+    "named-account promotion",
+    false,
+    "Work Team",
+    { name: "Personal", accounts: { work: { botToken: "old" } } },
+    {
+      enabled: true,
+      accounts: {
+        default: { name: "Personal" },
+        work: { botToken: "old" },
+        "work-team": { enabled: true, name: "Work", botToken: "new" },
+      },
+    },
+  ],
+  [
+    "default in accounts.default",
+    true,
+    DEFAULT_ACCOUNT_ID,
+    {},
+    { accounts: { default: { enabled: true, name: "Work", botToken: "new" } } },
+  ],
+] as const)("patches %s", (_name, alwaysUseAccounts, accountId, section, expected) => {
   const next = createPatchedAccountSetupAdapter({
     channelKey: "demo-setup",
+    alwaysUseAccounts,
     buildPatch: (input) => ({ botToken: input.token }),
   }).applyAccountConfig({
-    cfg: config("demo-setup", { name: "Personal", accounts: { work: { botToken: "old" } } }),
-    accountId: "Work Team",
+    cfg: config("demo-setup", section),
+    accountId,
     input: { name: "Work", token: "new" },
   });
-
-  expect(next.channels?.["demo-setup"]).toEqual({
-    enabled: true,
-    accounts: {
-      default: { name: "Personal" },
-      work: { botToken: "old" },
-      "work-team": { enabled: true, name: "Work", botToken: "new" },
-    },
-  });
-});
-
-it("can store the default account in accounts.default", () => {
-  const next = createPatchedAccountSetupAdapter({
-    channelKey: "demo-accounts",
-    alwaysUseAccounts: true,
-    buildPatch: (input) => ({ authDir: input.authDir }),
-  }).applyAccountConfig({
-    cfg: config("demo-accounts", {}),
-    accountId: DEFAULT_ACCOUNT_ID,
-    input: { name: "Phone", authDir: "/tmp/auth" },
-  });
-
-  expect(next.channels?.["demo-accounts"]).toEqual({
-    accounts: { default: { enabled: true, name: "Phone", authDir: "/tmp/auth" } },
-  });
+  expect(next.channels?.["demo-setup"]).toEqual(expected);
 });
 
 it("does not add a default when an ordinary named account already exists and no keys move", () => {

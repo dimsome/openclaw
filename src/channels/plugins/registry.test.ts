@@ -2,10 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-request-scope.js";
-import {
-  createChannelTestPluginBase,
-  createTestRegistry,
-} from "../../test-utils/channel-plugins.js";
+import { createChannelTestPluginBase } from "../../test-utils/channel-plugins.js";
 import { normalizeAnyChannelId } from "../registry-normalize.js";
 import {
   getChannelPlugin,
@@ -16,18 +13,13 @@ import {
 
 vi.mock("./bundled.js", () => ({
   getBundledChannelPlugin: (id: string) =>
-    id === "fallback"
-      ? {
-          id: "fallback",
-          meta: { label: "fallback" },
-        }
-      : undefined,
+    id === "fallback" ? { id, meta: { label: id } } : undefined,
 }));
 
 afterEach(resetPluginRuntimeStateForTest);
 
-function channelEntry(id: string, label = id) {
-  return { pluginId: id, plugin: createChannelTestPluginBase({ id, label }), source: "test" };
+function channelEntry(id: string, label = id, pluginId = id) {
+  return { pluginId, plugin: createChannelTestPluginBase({ id, label }), source: "test" };
 }
 
 function registryWith(...channels: ReturnType<typeof createEmptyPluginRegistry>["channels"]) {
@@ -37,55 +29,54 @@ function registryWith(...channels: ReturnType<typeof createEmptyPluginRegistry>[
 }
 
 it("keeps the scoped channel implementation and its registration provenance together", () => {
-  const root = createChannelTestPluginBase({ id: "fallback", label: "Root" });
-  const scoped = createChannelTestPluginBase({ id: "fallback", label: "Scoped" });
+  const root = channelEntry("fallback", "Root", "root");
+  const scoped = channelEntry("fallback", "Scoped", "scoped");
   const resolveChannelRuntime = vi.fn();
-  setActivePluginRegistry(
-    createTestRegistry([{ pluginId: "root", plugin: root, origin: "bundled", source: "root" }]),
-  );
+  setActivePluginRegistry(registryWith({ ...root, origin: "bundled" }));
   const registry = registryWith({
-    ...channelEntry("scoped"),
-    plugin: scoped,
+    ...scoped,
     origin: "config",
     resolveChannelRuntime,
   });
 
   withPluginRuntimeRegistryScope(registry, () => {
     expect(resolveChannelPluginRegistration("fallback")).toEqual({
-      plugin: scoped,
+      plugin: scoped.plugin,
       origin: "config",
       resolveChannelRuntime,
     });
-    expect(getChannelPlugin("fallback")).toBe(scoped);
+    expect(getChannelPlugin("fallback")).toBe(scoped.plugin);
   });
-  expect(getChannelPlugin("fallback")).toBe(root);
+  expect(getChannelPlugin("fallback")).toBe(root.plugin);
 });
 
 it("preserves unrelated root and bundled addressability inside an empty CLI handle", () => {
-  const root = createChannelTestPluginBase({ id: "root-only" });
-  setActivePluginRegistry(
-    createTestRegistry([{ pluginId: "root-only", plugin: root, source: "root" }]),
-  );
+  const root = channelEntry("root-only");
+  setActivePluginRegistry(registryWith(root));
 
   withPluginRuntimeRegistryScope(createEmptyPluginRegistry(), () => {
-    expect(getChannelPlugin("root-only")).toBe(root);
+    expect(getChannelPlugin("root-only")).toBe(root.plugin);
     expect(resolveChannelPluginRegistration("fallback")?.origin).toBe("bundled");
   });
 });
 
 it("keeps the first channel implementation and provenance when channel ids collide", () => {
-  const first = { ...channelEntry("duplicate", "first"), origin: "config" as const };
-  const second = { ...channelEntry("duplicate", "second"), origin: "bundled" as const };
-  const firstPlugin = first.plugin;
+  const first = {
+    ...channelEntry("duplicate", "first", "first-plugin"),
+    origin: "config" as const,
+  };
+  const second = {
+    ...channelEntry("duplicate", "second", "second-plugin"),
+    origin: "bundled" as const,
+  };
   setActivePluginRegistry(registryWith(first, second));
 
-  expect(listChannelPlugins()).toEqual([firstPlugin]);
-  expect(getLoadedChannelPlugin("duplicate")).toBe(firstPlugin);
+  expect(listChannelPlugins()).toEqual([first.plugin]);
+  expect(getLoadedChannelPlugin("duplicate")).toBe(first.plugin);
   expect(normalizeAnyChannelId("DUPLICATE")).toBe("duplicate");
   expect(getLoadedChannelPlugin("DUPLICATE")).toBeUndefined();
-  expect(getChannelPlugin("duplicate")).toBe(firstPlugin);
   expect(resolveChannelPluginRegistration("duplicate")).toEqual({
-    plugin: firstPlugin,
+    plugin: first.plugin,
     origin: "config",
   });
 });

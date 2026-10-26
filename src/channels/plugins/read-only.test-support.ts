@@ -111,13 +111,7 @@ export function writeExternalSetupChannelPlugin(
   });
   const pluginSource = (id: string, blurb: string) => `{
         id: ${JSON.stringify(id)},
-        meta: {
-          id: ${JSON.stringify(id)},
-          label: ${JSON.stringify(label)},
-          selectionLabel: ${JSON.stringify(label)},
-          docsPath: ${JSON.stringify(`/channels/${id}`)},
-          blurb: ${JSON.stringify(blurb)},
-        },
+        meta: ${JSON.stringify({ ...meta, id, docsPath: `/channels/${id}`, blurb })},
         capabilities: { chatTypes: ["direct"] },
         config: {
           listAccountIds: () => ["default"],
