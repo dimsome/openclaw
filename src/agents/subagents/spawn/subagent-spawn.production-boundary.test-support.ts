@@ -44,6 +44,7 @@ import {
 } from "../../../sessions/session-controller.rpc-sources.js";
 import { AsyncWorkScope } from "../../../shared/async-work-scope.js";
 import { openOpenClawStateDatabase } from "../../../state/openclaw-state-db.js";
+import { ensureProfileForEmail } from "../../../state/user-profiles.js";
 import {
   createOrResumeClientVoiceSession,
   flushClientVoiceSessionWrites,
@@ -54,6 +55,7 @@ import {
   createOperationalRunInstanceRef,
   getAdmittedRunDelegatedAuthority,
   prepareAgentRunAdmission,
+  readAdmittedRunOperatorAuthority,
   resolvePreparedRunAdmission,
   type AdmittedRunOperatorAuthority,
 } from "../../admitted-run-context.js";
@@ -519,9 +521,12 @@ export async function runTalkSpawnBoundaryCase(
     (principal: Parameters<typeof runtime.createAgentTurnFacade>[0]) =>
       runtime.createAgentTurnFacade(principal),
   );
+  const profile = ensureProfileForEmail("talk-spawn-operator@example.test");
+  const scopes = ["operator.admin"];
   const client = sharingPolicyClient({
+    user: profile.id,
     deviceId: "talk-spawn-caller",
-    scopes: ["operator.admin"],
+    scopes,
   });
   const source = captureGatewayDeviceRevocation(
     context,
@@ -535,6 +540,7 @@ export async function runTalkSpawnBoundaryCase(
     context,
     hasCurrentClientAuthority: source.isCurrent,
   });
+  expect(retained.operatorAuthority).toMatchObject({ profileId: profile.id, scopes });
   retained.accept();
   const sessionTarget = await prepareTalkSessionTarget(bound.cfg, parentSessionKey);
   const voiceSessionId = await createOrResumeClientVoiceSession({
@@ -600,6 +606,8 @@ export async function runTalkSpawnBoundaryCase(
       expect(admitted).not.toBe(bound.admitted);
       expect(admitted.operationalRunInstance.runId).toBe(params.runId);
       expect(getAdmittedRunDelegatedAuthority(admitted)).toBeDefined();
+      const operatorAuthority = readAdmittedRunOperatorAuthority(admitted);
+      expect(operatorAuthority).toMatchObject({ profileId: profile.id, scopes });
       // No ambient request may hide a missing binding on Talk's admission.
       expect(getPluginRuntimeGatewayRequestScope()?.context).toBeUndefined();
       expect(getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext).toBeUndefined();
@@ -608,6 +616,7 @@ export async function runTalkSpawnBoundaryCase(
         agentId: "main",
         sessionKey: parentSessionKey,
       });
+      expect(caller?.operatorAuthority).toBe(operatorAuthority);
       const tool = createSessionsSpawnTool({
         config: bound.cfg,
         agentSessionKey: parentSessionKey,
@@ -619,15 +628,15 @@ export async function runTalkSpawnBoundaryCase(
         tool.execute!("talk-spawn", { task: "bounded Talk child", context: "isolated" }),
       );
       if (change === "authorized") {
-        expect(
-          createFacade,
-          "Talk child admission requires its owning Gateway binding, not an unbound RPC fallback",
-        ).toHaveBeenCalledTimes(1);
         expect(result.details, JSON.stringify(result)).toMatchObject({
           status: "accepted",
           runId: childRunId,
           childSessionKey,
         });
+        expect(
+          createFacade,
+          "Talk child admission requires its owning Gateway binding, not an unbound RPC fallback",
+        ).toHaveBeenCalledTimes(1);
         await waitForEmbeddedRun(
           bound,
           expectDefined(childRunId, "child run"),
@@ -638,14 +647,14 @@ export async function runTalkSpawnBoundaryCase(
           loadSessionEntry({ storePath: bound.storePath, sessionKey: childSessionKey! }),
         ).toMatchObject({ spawnedBy: parentSessionKey, spawnDepth: 2 });
       } else {
-        expect(result.details).toMatchObject({
+        expect(result.details, JSON.stringify(result)).toMatchObject({
           status: "error",
-          error: expect.stringMatching(
+          error:
             change === "caller revoked"
-              ? /authority.*no longer active/
-              : /gateway request scope or instance binding/,
-          ),
+              ? "operator source authority is no longer active"
+              : "In-process gateway dispatch requires a gateway request scope or instance binding (method: agent).",
         });
+        expect(createFacade).not.toHaveBeenCalled();
         expect(getRpcSource(expectDefined(childRunId, "rejected child run"))).toBeUndefined();
         expect(runEmbeddedAgent).toHaveBeenCalledTimes(1);
         expect(subagentRuns.has(childRunId!)).toBe(false);
