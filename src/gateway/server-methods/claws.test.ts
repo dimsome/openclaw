@@ -21,14 +21,14 @@ afterEach(() => vi.clearAllMocks());
 
 const enabled = { gateway: { controlUi: { experimental: { claws: true } } } };
 
-function catalogRequest(
+async function catalogRequest(
   method: string,
   params: Record<string, unknown>,
   getRuntimeConfig: () => unknown = () => enabled,
 ) {
   const respond = vi.fn<RespondFn>();
   const handler = expectDefined(clawsHandlers[method], `${method} handler`);
-  const pending = handler({
+  await handler({
     req: { type: "req", id: "catalog", method },
     params,
     respond,
@@ -36,7 +36,12 @@ function catalogRequest(
     client: null,
     isWebchatConnect: () => false,
   });
-  return { replies: respond.mock.calls, pending };
+  return respond.mock.calls;
+}
+
+function expectError(replies: Parameters<RespondFn>[], code: string, message?: string) {
+  expect(replies).toHaveLength(1);
+  expect(replies[0]?.[2]).toMatchObject({ code, ...(message ? { message } : {}) });
 }
 
 it("does not expose installed-Claw status as a Gateway method", () => {
@@ -44,14 +49,7 @@ it("does not expose installed-Claw status as a Gateway method", () => {
 });
 
 describe("ClawHub Claw catalog Gateway methods", () => {
-  const entry = {
-    packageName: "@openclaw/workflow-operator",
-    displayName: "Workflow Operator",
-    channel: "official",
-    official: true,
-    downloads: 0,
-    updatedAtMs: 1,
-  };
+  const entry = { packageName: "@openclaw/workflow-operator" };
   const release = { packageName: entry.packageName, version: "1.0.0" };
   const previewParams = { ...release, kind: "instruction", name: "AGENTS.md" };
 
@@ -66,36 +64,27 @@ describe("ClawHub Claw catalog Gateway methods", () => {
         allowed: true,
       });
     }
-    const { replies, pending } = catalogRequest("claws.catalog.search", {}, () => ({}));
-    await pending;
-    expect(replies[0]?.[2]).toMatchObject({ code: "FORBIDDEN" });
+    expectError(await catalogRequest("claws.catalog.search", {}, () => ({})), "FORBIDDEN");
     expect(listClawHubClaws).not.toHaveBeenCalled();
   });
 
   it("lists starters and reads one exact official release with Labs on", async () => {
     listClawHubClaws.mockResolvedValue([entry]);
     readClawHubClawDetail.mockResolvedValue({ ...entry, version: "1.0.0" });
-    const search = catalogRequest("claws.catalog.search", {});
-    await search.pending;
-    expect(search.replies[0]?.[1]).toEqual({ entries: [entry] });
+    expect((await catalogRequest("claws.catalog.search", {}))[0]?.[1]).toEqual({
+      entries: [entry],
+    });
 
-    const detail = catalogRequest("claws.catalog.detail", release);
-    await detail.pending;
+    const detail = await catalogRequest("claws.catalog.detail", release);
     expect(readClawHubClawDetail).toHaveBeenCalledWith(release);
-    expect(detail.replies[0]?.[1]).toMatchObject({ detail: { ...entry, version: "1.0.0" } });
+    expect(detail[0]?.[1]).toMatchObject({ detail: { ...entry, version: "1.0.0" } });
   });
 
   it("returns the requested preview only for an exact official release", async () => {
     const preview = { kind: "instruction", name: "AGENTS.md", content: "# Instructions" };
     readClawHubClawPreview.mockResolvedValue(preview);
-    const params = {
-      ...release,
-      kind: "instruction",
-      name: "AGENTS.md",
-    };
-    const { replies, pending } = catalogRequest("claws.catalog.preview", params);
-    await pending;
-    expect(readClawHubClawPreview).toHaveBeenCalledWith(params);
+    const replies = await catalogRequest("claws.catalog.preview", previewParams);
+    expect(readClawHubClawPreview).toHaveBeenCalledWith(previewParams);
     expect(replies[0]?.[1]).toEqual({ preview });
   });
 
@@ -109,16 +98,11 @@ describe("ClawHub Claw catalog Gateway methods", () => {
       const source = createDeferredCore<unknown>();
       sourceMock.mockReturnValue(source.promise);
       let labsEnabled = true;
-      const { replies, pending } = catalogRequest(method, params, () =>
-        labsEnabled ? enabled : {},
-      );
+      const pending = catalogRequest(method, params, () => (labsEnabled ? enabled : {}));
 
       labsEnabled = false;
       source.resolve(result);
-      await pending;
-
-      expect(replies).toHaveLength(1);
-      expect(replies[0]?.[2]).toMatchObject({ code: "FORBIDDEN" });
+      expectError(await pending, "FORBIDDEN");
     },
   );
 
@@ -127,10 +111,7 @@ describe("ClawHub Claw catalog Gateway methods", () => {
     ["claws.catalog.detail", { packageName: 42 }],
     ["claws.catalog.preview", { ...release, kind: "unknown", name: "AGENTS.md" }],
   ])("rejects malformed %s before catalog I/O", async (method, params) => {
-    const { replies, pending } = catalogRequest(method, params);
-    await pending;
-    expect(replies).toHaveLength(1);
-    expect(replies[0]?.[2]).toMatchObject({ code: "INVALID_REQUEST" });
+    expectError(await catalogRequest(method, params), "INVALID_REQUEST");
     expect(listClawHubClaws).not.toHaveBeenCalled();
     expect(readClawHubClawDetail).not.toHaveBeenCalled();
     expect(readClawHubClawPreview).not.toHaveBeenCalled();
@@ -141,9 +122,6 @@ describe("ClawHub Claw catalog Gateway methods", () => {
     [new Error("upstream internal detail"), "ClawHub catalog is unavailable."],
   ])("preserves the public catalog failure for %s", async (failure, message) => {
     readClawHubClawDetail.mockRejectedValue(failure);
-    const { replies, pending } = catalogRequest("claws.catalog.detail", release);
-    await pending;
-    expect(replies).toHaveLength(1);
-    expect(replies[0]?.[2]).toMatchObject({ code: "UNAVAILABLE", message });
+    expectError(await catalogRequest("claws.catalog.detail", release), "UNAVAILABLE", message);
   });
 });

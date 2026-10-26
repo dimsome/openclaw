@@ -5,7 +5,6 @@ import {
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
-import * as approvals from "../operator-approval-store.js";
 import { gatewayRequest } from "../request-frame.test-support.js";
 import { handleGatewayRequest } from "../server-methods.js";
 import { getSessionRowProjection } from "../session-row-projection-access.js";
@@ -41,44 +40,17 @@ it("measures subscription dispatch with a 160k-token transcript", async () => {
       subscribeSessionMessageEvents: subscribers.subscribe,
       listSessionPendingApprovals: runtime.replay,
     });
-    const phaseMs = { preparation: 0, pendingAfterExpiry: 0 };
-    const prepare = approvals.prepareOperatorApprovalReplay;
-    const pending = approvals.listPendingOperatorApprovals;
-    vi.spyOn(approvals, "prepareOperatorApprovalReplay").mockImplementation(async (...args) => {
-      const start = performance.now();
-      try {
-        return await prepare(...args);
-      } finally {
-        phaseMs.preparation += performance.now() - start;
-      }
-    });
-    vi.spyOn(approvals, "listPendingOperatorApprovals").mockImplementation(async (...args) => {
-      const start = performance.now();
-      try {
-        return await pending(...args);
-      } finally {
-        phaseMs.pendingAfterExpiry += performance.now() - start;
-      }
-    });
     const projection = getSessionRowProjection(context)!;
-    let readMs = 0;
     let currencyReads = 0;
     const retain = lifetime.retainGatewaySessionEntryReadOnly;
     vi.spyOn(lifetime, "retainGatewaySessionEntryReadOnly").mockImplementation(async (...args) => {
-      const start = performance.now();
       const read = await retain(...args);
-      readMs += performance.now() - start;
       const assert = read.isCurrentAtResponse;
       return {
         ...read,
         isCurrentAtResponse: () => {
           currencyReads++;
-          const validationStartedAt = performance.now();
-          try {
-            return assert();
-          } finally {
-            readMs += performance.now() - validationStartedAt;
-          }
+          return assert();
         },
       };
     });
@@ -100,10 +72,7 @@ it("measures subscription dispatch with a 160k-token transcript", async () => {
         }
         for (const includeApprovals of [false, true]) {
           const samples: number[] = [];
-          readMs = 0;
           currencyReads = 0;
-          phaseMs.preparation = 0;
-          phaseMs.pendingAfterExpiry = 0;
           for (let index = 0; index < 50; index++) {
             const respond = vi.fn();
             const start = performance.now();
@@ -135,9 +104,6 @@ it("measures subscription dispatch with a 160k-token transcript", async () => {
               meanMs: samples.reduce((a, b) => a + b, 0) / samples.length,
               p50Ms: samples[25],
               p99Ms: samples[49],
-              retainedReadMs: readMs / samples.length,
-              approvalStorePreparationMs: phaseMs.preparation / samples.length,
-              pendingAfterExpiryMs: phaseMs.pendingAfterExpiry / samples.length,
               currencyReadsPerSubscribe: currencyReads / samples.length,
             }),
           );
