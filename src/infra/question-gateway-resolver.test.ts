@@ -31,27 +31,24 @@ function terminalError(reason: "QUESTION_ALREADY_TERMINAL" | "QUESTION_NOT_FOUND
 
 beforeEach(() => hoisted.callGateway.mockReset());
 const methods = () => hoisted.callGateway.mock.calls.map(([call]) => call.method);
+const reply = (question: object = pendingRecord) =>
+  hoisted.callGateway.mockResolvedValueOnce({ question });
 
 it("does not resolve when access is lost between the read and the write", async () => {
-  hoisted.callGateway.mockResolvedValueOnce({ question: pendingRecord });
+  reply();
   const authorize = vi.fn(() => {
     expect(methods()).toEqual(["question.get"]);
     return false;
   });
-  const result = await resolveQuestionOverGateway({
-    ...request,
-    optionValue: "Production",
-    senderId: "mattermost:42",
-    authorize,
+  await expect(resolveQuestionOverGateway({ ...request, authorize })).resolves.toEqual({
+    status: "denied",
   });
-
-  expect(result).toEqual({ status: "denied" });
   expect(authorize).toHaveBeenCalledOnce();
   expect(methods()).toEqual(["question.get"]);
 });
 
 it.each([false, true])("maps the rendered option value (authorized: %s)", async (authorized) => {
-  hoisted.callGateway.mockResolvedValueOnce({ question: pendingRecord });
+  reply();
   hoisted.callGateway.mockResolvedValueOnce({ status: "answered" });
 
   await expect(
@@ -88,7 +85,7 @@ it.each([
   ["question.resolve", "QUESTION_ALREADY_TERMINAL", "already-terminal"],
 ] as const)("returns a terminal outcome when %s races", async (method, reason, expectedReason) => {
   if (method === "question.resolve") {
-    hoisted.callGateway.mockResolvedValueOnce({ question: pendingRecord });
+    reply();
   }
   hoisted.callGateway.mockRejectedValueOnce(terminalError(reason));
 
@@ -99,9 +96,7 @@ it.each([
 });
 
 it("does not resolve an already-terminal record", async () => {
-  hoisted.callGateway.mockResolvedValueOnce({
-    question: { ...pendingRecord, status: "expired" },
-  });
+  reply({ ...pendingRecord, status: "expired" });
 
   await expect(resolveQuestionOverGateway(request)).resolves.toEqual({
     status: "already-terminal",
@@ -111,9 +106,7 @@ it("does not resolve an already-terminal record", async () => {
 });
 
 it("leaves option membership validation to question.resolve", async () => {
-  hoisted.callGateway
-    .mockResolvedValueOnce({ question: pendingRecord })
-    .mockRejectedValueOnce(new Error("invalid answer"));
+  reply().mockRejectedValueOnce(new Error("invalid answer"));
 
   await expect(resolveQuestionOverGateway({ ...request, optionValue: "Other" })).rejects.toThrow(
     "invalid answer",
@@ -122,14 +115,12 @@ it("leaves option membership validation to question.resolve", async () => {
 });
 
 it("never partially resolves a multi-question record", async () => {
-  hoisted.callGateway.mockResolvedValueOnce({
-    question: {
-      ...pendingRecord,
-      questions: [
-        ...pendingRecord.questions,
-        { ...pendingRecord.questions[0], questionId: "region" },
-      ],
-    },
+  reply({
+    ...pendingRecord,
+    questions: [
+      ...pendingRecord.questions,
+      { ...pendingRecord.questions[0], questionId: "region" },
+    ],
   });
 
   await expect(resolveQuestionOverGateway(request)).rejects.toThrow("one tappable question");
@@ -137,11 +128,9 @@ it("never partially resolves a multi-question record", async () => {
 });
 
 it("validates native custom input without resolving the question", async () => {
-  hoisted.callGateway.mockResolvedValueOnce({
-    question: {
-      ...pendingRecord,
-      questions: [{ ...pendingRecord.questions[0], isOther: true }],
-    },
+  reply({
+    ...pendingRecord,
+    questions: [{ ...pendingRecord.questions[0], isOther: true }],
   });
 
   await expect(

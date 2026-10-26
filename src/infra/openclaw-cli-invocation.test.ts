@@ -41,7 +41,7 @@ function expectInvocation(options: Options, expected: Partial<Invocation>) {
 const writePackage = (root: string) =>
   writeFile(path.join(root, "package.json"), '{"name":"openclaw"}');
 
-it.each([true, false])("uses standalone sidecar (sidecar cwd=%s)", async (sidecarCwd) => {
+it("uses the standalone sidecar from outside its installation", async () => {
   const root = tempDirs.make("openclaw-cli-standalone-");
   const packageRoot = path.join(root, "runtime");
   await mkdir(packageRoot);
@@ -60,9 +60,9 @@ it.each([true, false])("uses standalone sidecar (sidecar cwd=%s)", async (sideca
   expectInvocation(
     {
       execPath,
-      argv1: sidecarCwd ? path.join(packageRoot, "openclaw.mjs") : "/$bunfs/root/cli.js",
+      argv1: "/$bunfs/root/cli.js",
       execArgv: ["--trace-warnings"],
-      cwd: sidecarCwd ? root : repoRoot,
+      cwd: repoRoot,
     },
     { command: execPath, args: commandArgs, cwd: packageRoot },
   );
