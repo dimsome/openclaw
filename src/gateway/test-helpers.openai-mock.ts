@@ -25,28 +25,29 @@ function extractLastUserText(input: unknown[]): string {
   return "";
 }
 
-function extractToolOutput(input: unknown[]): string {
-  const item = input.find(
+function buildOpenAIResponsesSse(input: unknown[]): Response {
+  const output = input.find(
     (entry) => (entry as Record<string, unknown> | undefined)?.type === "function_call_output",
   ) as Record<string, unknown> | undefined;
-  return typeof item?.output === "string" ? item.output : "";
-}
-
-function buildOpenAIResponsesSse(input: unknown[]): Response {
-  const toolOutput = extractToolOutput(input);
-  const completed = {
-    type: "response.completed",
-    response: {
-      status: "completed",
-      usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 },
-    },
-  };
+  const toolOutput = typeof output?.output === "string" ? output.output : "";
+  const respond = (added: object, done: object, deltas: object[] = []) =>
+    buildSseResponse([
+      { type: "response.output_item.added", item: added },
+      ...deltas,
+      { type: "response.output_item.done", item: done },
+      {
+        type: "response.completed",
+        response: {
+          status: "completed",
+          usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 },
+        },
+      },
+    ]);
 
   if (!toolOutput) {
-    const prompt = extractLastUserText(input);
-    const quoted = /"([^"]+)"/.exec(prompt)?.[1];
-    const toolPath = quoted ?? "package.json";
-    const argsJson = JSON.stringify({ path: toolPath });
+    const argsJson = JSON.stringify({
+      path: /"([^"]+)"/.exec(extractLastUserText(input))?.[1] ?? "package.json",
+    });
     const item = {
       type: "function_call",
       id: "fc_test_1",
@@ -54,11 +55,8 @@ function buildOpenAIResponsesSse(input: unknown[]): Response {
       name: "read",
     };
 
-    return buildSseResponse([
-      { type: "response.output_item.added", item: { ...item, arguments: "" } },
+    return respond({ ...item, arguments: "" }, { ...item, arguments: argsJson }, [
       { type: "response.function_call_arguments.delta", delta: argsJson },
-      { type: "response.output_item.done", item: { ...item, arguments: argsJson } },
-      completed,
     ]);
   }
 
@@ -67,21 +65,14 @@ function buildOpenAIResponsesSse(input: unknown[]): Response {
   const reply = `${nonceA} ${nonceB}`.trim();
   const item = { type: "message", id: "msg_test_1", role: "assistant" };
 
-  return buildSseResponse([
+  return respond(
+    { ...item, content: [], status: "in_progress" },
     {
-      type: "response.output_item.added",
-      item: { ...item, content: [], status: "in_progress" },
+      ...item,
+      status: "completed",
+      content: [{ type: "output_text", text: reply, annotations: [] }],
     },
-    {
-      type: "response.output_item.done",
-      item: {
-        ...item,
-        status: "completed",
-        content: [{ type: "output_text", text: reply, annotations: [] }],
-      },
-    },
-    completed,
-  ]);
+  );
 }
 
 function decodeBodyText(body: unknown): string {
