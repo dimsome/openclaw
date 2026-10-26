@@ -58,6 +58,7 @@ import {
   resolveGatewayStateOwnerPath,
   tryBorrowGatewayStateOwner,
 } from "./gateway-state-owner.js";
+import { readProcessMachineIdentity } from "./process-machine-identity.js";
 
 export type GatewayLockHandle = {
   lockPath: string;
@@ -452,6 +453,7 @@ export async function acquireGatewayLock(
     stateDir: paths.stateDir,
     role,
     processNamespace: readGatewayLockProcessNamespace(),
+    machineIdentity: readProcessMachineIdentity(),
     ...(role === "gateway" ? { cronOwnerProjection: "dynamic-default-v1" as const } : {}),
     ...(typeof opts.port === "number" &&
     Number.isInteger(opts.port) &&

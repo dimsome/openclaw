@@ -19,6 +19,7 @@ import {
   StateDatabaseAdmissionPendingError,
   StateDatabaseOfflineMaintenanceError,
 } from "./gateway-state-owner-errors.js";
+import { readProcessMachineIdentity } from "./process-machine-identity.js";
 import { isLockOwnerDefinitelyStale } from "./stale-lock-file.js";
 
 function isComparableStateOwnerStale(
@@ -126,6 +127,7 @@ export function defaultPayload(databasePath: string): LockPayload {
     configPath: path.join(stateDir, "openclaw.json"),
     role: "sqlite-maintenance",
     processNamespace: readGatewayLockProcessNamespace(),
+    machineIdentity: readProcessMachineIdentity(),
     ...(parentPid === undefined ? {} : { parentPid }),
     ...(parentStartTime === null ? {} : { parentStartTime }),
     ...(startTime === null ? {} : { startTime }),

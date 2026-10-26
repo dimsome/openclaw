@@ -40,6 +40,7 @@ import type {
 import { captureGatewayStateOwner, type StateDatabaseSchemaLease } from "./gateway-state-owner.js";
 import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "./kysely-sync.js";
 import { resolveDiagnosticProcessEnv } from "./process-env.js";
+import { readProcessMachineIdentity } from "./process-machine-identity.js";
 import type { EngineConnection } from "./sql-connection.js";
 import { throwSqliteLifecycleErrors } from "./sqlite-lifecycle-errors.js";
 import { retainSnapshotTempDirectory } from "./sqlite-readonly-location-cleanup.js";
@@ -70,6 +71,7 @@ function resolveStoppedGatewayOwnerLease(previous: GatewayOwnerLeaseIdentity | u
   }
   const namespace = classifyGatewayOwnerProcessNamespace(previous.processNamespace, {
     ownerHost: previous.host,
+    machineIdentity: previous.machineIdentity,
   });
   if (namespace === "dead") {
     return previous;
@@ -229,6 +231,7 @@ export function acquireGatewayOwnerLease(params: {
     pid: process.pid,
     host: hostname(),
     processNamespace: readGatewayLockProcessNamespace(),
+    machineIdentity: readProcessMachineIdentity(),
     // Retry the native self lookup with its full Windows budget before publication.
     startedAt:
       getFileLockProcessStartTime(process.pid, env) ??

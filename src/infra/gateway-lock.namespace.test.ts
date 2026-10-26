@@ -1,7 +1,9 @@
+import { spawnSync } from "node:child_process";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { getEnvironmentData, setEnvironmentData } from "node:worker_threads";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
@@ -15,6 +17,7 @@ import {
   readGatewayLockProcessNamespace,
 } from "./gateway-lock-payload.js";
 import * as gatewayLockProcessModule from "./gateway-lock-process.js";
+import { shippedLockPayloadSchema } from "./gateway-lock-rollback.test-support.js";
 import {
   acquireGatewayLock,
   GatewayLockError,
@@ -28,7 +31,16 @@ import {
   GatewayStateOwnerContentionError,
   resolveGatewayStateOwnerPath,
 } from "./gateway-state-owner.js";
+import * as machineIdentity from "./process-machine-identity.js";
 import * as bootReader from "./update-managed-service-handoff-boot.js";
+
+// SQLite preload imports the machine owner before this file installs its native probe mock.
+vi.hoisted(() => vi.resetModules());
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, spawnSync: vi.fn(actual.spawnSync) };
+});
 
 vi.mock("node:timers/promises", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:timers/promises")>()),
@@ -92,6 +104,70 @@ describe("gateway lock namespaces", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
+
+  it.each(["discovered", "unavailable", "inherited"] as const)(
+    "observes the Darwin machine once and carries its %s fact",
+    (kind) => {
+      const key = machineIdentity.PROCESS_MACHINE_IDENTITY_KEY;
+      const previous = getEnvironmentData(key);
+      vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+      setEnvironmentData(
+        key,
+        kind === "inherited" ? { platform: "darwin", value: "a".repeat(64) } : undefined,
+      );
+      const probe = vi
+        .mocked(spawnSync)
+        .mockClear()
+        .mockImplementationOnce(() => {
+          throw new Error("machine observation unavailable");
+        });
+      if (kind === "discovered") {
+        probe.mockReset().mockReturnValueOnce({
+          pid: 1,
+          output: [null, '"IOPlatformUUID" = "12345678-abcd-1234-abcd-123456789abc"', null],
+          stdout: '"IOPlatformUUID" = "12345678-abcd-1234-abcd-123456789abc"',
+          stderr: "",
+          status: 0,
+          signal: null,
+        });
+      }
+      try {
+        const observed = machineIdentity.readProcessMachineIdentity();
+        expect(observed).toEqual(
+          kind === "unavailable" ? null : expect.stringMatching(/^[a-f0-9]{64}$/u),
+        );
+        expect(machineIdentity.readProcessMachineIdentity()).toBe(observed);
+        expect(probe).toHaveBeenCalledTimes(kind === "inherited" ? 0 : 1);
+        expect(getEnvironmentData(key)).toEqual({ platform: "darwin", value: observed });
+      } finally {
+        probe.mockReset();
+        setEnvironmentData(key, previous);
+      }
+    },
+  );
+
+  it.runIf(process.platform === "darwin" || process.platform === "linux")(
+    "writes machine evidence outside the frozen shipped namespace in every lock projection",
+    async () => {
+      vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue("a".repeat(64));
+      const env = await makeEnv();
+      const paths = resolveGatewayLockPaths(env, resolveTestLockDir(env));
+      const acquired = await acquireForTest(env);
+      try {
+        expect(acquired).not.toBeNull();
+        for (const file of [paths.ownerLockPath, paths.stateLockPath]) {
+          const record = JSON.parse(await fs.readFile(file, "utf8"));
+          expect(record.machineIdentity).toBe("a".repeat(64));
+          const oldReader = shippedLockPayloadSchema.parse(record);
+          expect(oldReader.processNamespace).toEqual(record.processNamespace);
+          expect(oldReader).not.toHaveProperty("machineIdentity");
+          expect(oldReader.pid).toBe(process.pid);
+        }
+      } finally {
+        await acquired?.release();
+      }
+    },
+  );
 
   it("reads the Linux namespace identity without following its procfs magic link", () => {
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
@@ -436,10 +512,12 @@ describe("gateway lock namespaces", () => {
     async (kind) => {
       const env = await makeEnv();
       const namespace = mockLinuxNamespace(env.OPENCLAW_STATE_DIR);
+      vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue("a".repeat(64));
       vi.useFakeTimers();
       const paths = resolveGatewayLockPaths(env, resolveTestLockDir(env));
       const payload = JSON.stringify({
         ...createLockPayload({ configPath: paths.configPath, startTime: 1 }),
+        machineIdentity: "a".repeat(64),
         pid: 2_147_483_647,
         processNamespace: { ...namespace, pidNsInode: "foreign-namespace" },
       });

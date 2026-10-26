@@ -26,6 +26,7 @@ import {
   GATEWAY_OWNER_HEARTBEAT_STALE_MS,
   readGatewayLockProcessNamespace,
 } from "./gateway-lock-payload.js";
+import { parseShippedStateLeaseProcessOwner } from "./gateway-lock-rollback.test-support.js";
 import { acquireGatewayLock } from "./gateway-lock.js";
 import {
   acquireGatewayOwnerLease,
@@ -36,6 +37,7 @@ import * as ownerLeaseRead from "./gateway-owner-lease.read.js";
 import * as stateOwners from "./gateway-state-owner.js";
 import { acquireGatewayStateOwner, tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
+import * as machineIdentity from "./process-machine-identity.js";
 import { writeGatewayServiceRestartIntentSync } from "./restart-intent.js";
 import {
   readSqliteDatabaseCleanClose,
@@ -99,6 +101,7 @@ function seedOwner(
     expiresAt = Date.now() + 300_000,
     heartbeatAt = Date.now(),
     processNamespace = readGatewayLockProcessNamespace(),
+    machineIdentity: ownerMachineIdentity,
   }: {
     pid?: number;
     host?: string;
@@ -106,6 +109,7 @@ function seedOwner(
     expiresAt?: number | null;
     heartbeatAt?: number;
     processNamespace?: unknown;
+    machineIdentity?: string | null;
   } = {},
 ) {
   withOpenClawStateStartupMigrationCheckpointDatabase(
@@ -118,7 +122,7 @@ function seedOwner(
         expiresAt,
         heartbeatAt,
         JSON.stringify({
-          owner: { pid, host, processNamespace, startedAt },
+          owner: { pid, host, processNamespace, startedAt, machineIdentity: ownerMachineIdentity },
           port: 19483,
           mode: "foreground",
           supervisor: null,
@@ -184,6 +188,46 @@ function readFreshProcessNamespace() {
 }
 
 describe("Gateway owner lease", () => {
+  it.runIf(process.platform === "darwin" || process.platform === "linux").each([
+    { kind: "same machine", machine: "a".repeat(64), reclaim: true },
+    { kind: "different machine", machine: "b".repeat(64), reclaim: false },
+    { kind: "legacy", machine: undefined, reclaim: false },
+  ])("handles a renamed previous-boot $kind lease", async ({ machine, reclaim }) => {
+    vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue("a".repeat(64));
+    await using owner = fixture();
+    const namespace = readFreshProcessNamespace();
+    seedOwner(owner.env, {
+      host: "previous-hostname",
+      machineIdentity: machine,
+      processNamespace: {
+        ...namespace,
+        host: "previous-hostname",
+        identity: "87654321-abcd-0123-abcd-0123456789ab",
+      },
+    });
+    if (!reclaim) {
+      expect(() => owner.acquire()).toThrow("openclaw gateway recover-lock");
+      expect(readGatewayOwnerLease({ env: owner.env })?.owner).toBe("previous-generation");
+      return;
+    }
+    await owner.acquire().ready;
+    const lease = readGatewayOwnerLease({ env: owner.env });
+    expect(lease).toMatchObject({ state: "live", machineIdentity: "a".repeat(64) });
+    const row = withOpenClawStateStartupMigrationCheckpointDatabase(
+      (db) =>
+        db
+          .prepare(
+            "SELECT payload_json FROM state_leases WHERE scope = 'gateway-owner' AND lease_key = 'global'",
+          )
+          .get() as { payload_json: string },
+      { env: owner.env },
+    );
+    const oldReader = parseShippedStateLeaseProcessOwner(row.payload_json);
+    expect(oldReader?.processNamespace).toEqual(lease?.processNamespace);
+    expect(oldReader?.pid).toBe(process.pid);
+    expect(oldReader).not.toHaveProperty("machineIdentity");
+  });
+
   it.runIf(process.platform === "darwin")(
     "records native restart intent after a hostname change in the same kernel boot",
     async () => {
@@ -710,6 +754,7 @@ describe("Gateway owner lease", () => {
         host: hostname(),
         processNamespace: readGatewayLockProcessNamespace(),
         heartbeatAt: expect.any(Number),
+        machineIdentity: machineIdentity.readProcessMachineIdentity(),
         startedAt: pidAlive.getFileLockProcessStartTime(process.pid),
         port: 19483,
         mode: "foreground",
