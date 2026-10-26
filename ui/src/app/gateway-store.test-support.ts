@@ -22,13 +22,7 @@ export function createGatewayEvent(
   payload: unknown = {},
   seq = 1,
 ): GatewayEventFrame {
-  return {
-    type: "event",
-    event,
-    payload,
-    seq,
-    stateVersion: { presence: seq, health: seq },
-  };
+  return { type: "event", event, payload, seq, stateVersion: { presence: seq, health: seq } };
 }
 
 const NativeGatewayBrowserClient = browserGateway.GatewayBrowserClient;
@@ -91,13 +85,8 @@ export function createGatewayStoreTestStore(
   captureGatewayClients();
   const clients: ReturnType<typeof observeGatewayClient>[] = [];
   const observedClients = new WeakSet<GatewayBrowserClient>();
-  const gateway = createApplicationGateway(params.settings ?? loadSettings(), "", "", {
-    persistDefaultConnectionSettings: params.persistDefaultConnectionSettings,
-    ownsWarmBoot: params.ownsWarmBoot,
-    resourceBasePath: params.resourceBasePath,
-    getModelCatalogTarget: params.getModelCatalogTarget,
-    clientOptions: params.clientOptions,
-  });
+  const { settings = loadSettings(), configureClient, ...options } = params;
+  const gateway = createApplicationGateway(settings, "", "", options);
   onTestFinished(
     gateway.subscribe((snapshot) => {
       const client = snapshot.client;
@@ -105,7 +94,7 @@ export function createGatewayStoreTestStore(
         observedClients.add(client);
         const observed = observeGatewayClient(client);
         clients.push(observed);
-        params.configureClient?.(observed);
+        configureClient?.(observed);
       }
     }),
   );

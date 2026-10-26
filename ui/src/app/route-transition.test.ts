@@ -46,8 +46,7 @@ function testDocumentWithOutlet(animate = vi.fn()) {
 afterEach(() => document.body.replaceChildren());
 
 it("animates the rendered chat pane without freezing the outgoing document", async () => {
-  const finished = Promise.resolve({} as Animation);
-  const animate = vi.fn(() => ({ finished }) as Animation);
+  const animate = vi.fn(() => ({ finished: Promise.resolve({} as Animation) }) as Animation);
   const test = testDocumentWithOutlet(animate);
   const navigation = createDeferredCore();
   const navigate = vi.fn(() => navigation.promise);
@@ -69,12 +68,8 @@ it("animates the rendered chat pane without freezing the outgoing document", asy
 it("propagates navigation failure without animating", async () => {
   const test = testDocumentWithOutlet();
   const failure = new Error("Chat route failed to load");
-  const navigate = vi.fn(async () => {
-    throw failure;
-  });
-
+  const navigate = vi.fn(() => Promise.reject(failure));
   await expect(test.transition(navigate)).rejects.toBe(failure);
-
   expect(navigate).toHaveBeenCalledOnce();
   expect(test.animate).not.toHaveBeenCalled();
 });
@@ -94,8 +89,7 @@ it.each([
 
 it("cancels a running entrance when another route takes over", async () => {
   const cancel = vi.fn();
-  const running: Partial<Animation> = { finished: new Promise(() => {}), cancel };
-  const animate = vi.fn(() => running as Animation);
+  const animate = vi.fn(() => ({ finished: new Promise(() => {}), cancel }) as Animation);
   const test = testDocumentWithOutlet(animate);
   const transition = test.transition(async () => undefined);
   chatReady();

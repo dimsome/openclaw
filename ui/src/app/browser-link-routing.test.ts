@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { afterEach, beforeEach, expect, it, onTestFinished, vi } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { BROWSER_PANEL_TOGGLE_EVENT } from "../components/panel-toggle-contract.ts";
 import { startNativeLinkRouting } from "./native-link-routing.ts";
 
@@ -12,16 +12,6 @@ function appendLink(href: string, attributes: Record<string, string> = {}) {
   }
   document.body.append(anchor);
   return anchor;
-}
-
-function mouseEvent(type: "click" | "auxclick", init: MouseEventInit = {}) {
-  return new MouseEvent(type, {
-    bubbles: true,
-    cancelable: true,
-    composed: true,
-    button: type === "auxclick" ? 1 : 0,
-    ...init,
-  });
 }
 
 function startBrowserLinkRouting(available = true) {
@@ -39,12 +29,16 @@ function startBrowserLinkRouting(available = true) {
 }
 
 function dispatchLink(href: string, init: MouseEventInit = {}, attributes = {}, middle = false) {
-  const event = mouseEvent(middle ? "auxclick" : "click", init);
+  const event = new MouseEvent(middle ? "auxclick" : "click", {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    button: middle ? 1 : 0,
+    ...init,
+  });
   appendLink(href, attributes).dispatchEvent(event);
   return event;
 }
-
-beforeEach(() => document.body.replaceChildren());
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -52,12 +46,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("preserves existing browser behavior by default", async () => {
+it("preserves existing browser behavior by default", () => {
   startBrowserLinkRouting(false);
   expect(dispatchLink("https://example.com/report").defaultPrevented).toBe(false);
 });
 
-it("routes primary, modified, middle, and new-window links to new browser-panel tabs", async () => {
+it("routes primary, modified, middle, and new-window links to new browser-panel tabs", () => {
   const requests = startBrowserLinkRouting();
   const cases: Array<[string, MouseEventInit?, Record<string, string>?, boolean?]> = [
     ["primary"],
@@ -76,11 +70,11 @@ it("routes primary, modified, middle, and new-window links to new browser-panel 
   );
 });
 
-it("preserves link handlers that cancel navigation", async () => {
+it("preserves link handlers that cancel navigation", () => {
   const requests = startBrowserLinkRouting();
   const anchor = appendLink("https://example.com/handled");
   anchor.addEventListener("click", (event) => event.preventDefault());
-  const event = mouseEvent("click");
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, composed: true });
 
   anchor.dispatchEvent(event);
 
@@ -90,27 +84,22 @@ it("preserves link handlers that cancel navigation", async () => {
 
 it.each([false, true])(
   "native links take precedence when the remote preference is %s",
-  async (enabled) => {
+  (enabled) => {
     const postMessage = vi.fn();
-    const messageHandlers = {
-      openclawLink: { postMessage },
-      openclawBrowser: { postMessage: vi.fn() },
-    };
-    Object.defineProperty(window, "webkit", { configurable: true, value: { messageHandlers } });
+    vi.stubGlobal("webkit", {
+      messageHandlers: {
+        openclawLink: { postMessage },
+        openclawBrowser: { postMessage: vi.fn() },
+      },
+    });
     const requests = startBrowserLinkRouting(enabled);
     expect(dispatchLink("https://example.com/report").defaultPrevented).toBe(true);
     expect(postMessage).not.toHaveBeenCalled();
-    expect(requests).toEqual([
-      {
-        open: true,
-        url: "https://example.com/report",
-        native: true,
-      },
-    ]);
+    expect(requests).toEqual([{ open: true, url: "https://example.com/report", native: true }]);
   },
 );
 
-it("ignores local, download, file, non-web, Shift/Alt, and right-click targets", async () => {
+it("ignores local, download, file, non-web, Shift/Alt, and right-click targets", () => {
   const requests = startBrowserLinkRouting();
   const cases: Array<[string, MouseEventInit?, Record<string, string>?, boolean?]> = [
     [`${location.origin}/usage`],

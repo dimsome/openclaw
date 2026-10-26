@@ -88,9 +88,9 @@ export function createServerPrefsWriter(
 export function createProfilePrefsServer(
   initial: Record<string, Record<string, unknown>> = {},
   scope = "ws://navigation",
-  config: unknown = {
-    ui: { prefs: { sidebarEntries: ["route:usage", "plugin:workboard/workboard"] } },
-  },
+  config: unknown = configWithPrefs({
+    sidebarEntries: ["route:usage", "plugin:workboard/workboard"],
+  }),
 ) {
   const profiles = structuredClone(initial);
   const connect = (profileId: string) => {

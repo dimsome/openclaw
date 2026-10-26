@@ -4,13 +4,13 @@ import { showToast } from "../lib/toast.ts";
 import { createStorageMock } from "../test-helpers/storage.ts";
 import { createUpdateRunFixture as updateRunFixture } from "../test-helpers/update-run.ts";
 import { flushMicrotasks, type RequestFn } from "./overlays-access.test-support.ts";
-import { disposeTestOverlays, runTest } from "./overlays-update.test-support.ts";
+import { disposeTestOverlays, requestCalls, runTest } from "./overlays-update.test-support.ts";
 
 vi.mock("../lib/toast.ts", () => ({ showToast: vi.fn() }));
 
 let run: ReturnType<typeof updateRunFixture>;
 let request: ReturnType<typeof vi.fn<RequestFn>>;
-const calls = (method: string) => request.mock.calls.filter(([name]) => name === method);
+const calls = (method: string) => requestCalls(request, method);
 const acceptedRun = (method: string, status: object = {}) =>
   method === "update.run"
     ? { ok: true, runId: run.runId }
