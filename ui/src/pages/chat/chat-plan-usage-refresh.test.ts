@@ -68,26 +68,23 @@ it("updates the open popover after the Gateway deadline without per-run requests
       await refreshChatModelAuthStatus(currentPane.state);
     }),
   );
-  await waitForSolid(() =>
-    expect(pane.element.querySelector(".context-usage summary")).not.toBeNull(),
-  );
-  pane.element.querySelector<HTMLElement>(".context-usage summary")!.click();
-  await waitForSolid(() =>
-    expect(
-      pane.element.querySelector(".context-usage__limit")?.textContent,
-      "initial usage",
-    ).toContain("1%"),
-  );
+  const query = (selector: string) => pane.element.querySelector<HTMLElement>(selector);
+  const expectUsage = (percent: number) =>
+    waitForSolid(() =>
+      expect(query(".context-usage__limit")?.textContent).toContain(`${percent}%`),
+    );
+  await waitForSolid(() => expect(query(".context-usage summary")).not.toBeNull());
+  query(".context-usage summary")!.click();
+  await expectUsage(1);
   expect(auth).toHaveBeenCalledTimes(1);
   // Keep rendering setup on real timers; advance idle time only to detect polling.
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-  for (const [index, [elapsed, nextUsage, expectedUsage, calls]] of (
-    [
-      [10_000, 18, 18, 2],
-      [20_000, 22, 18, 2],
-      [130_000, 25, 25, 3],
-    ] as const
-  ).entries()) {
+  const updates = [
+    [10_000, 18, 18, 2],
+    [20_000, 22, 18, 2],
+    [130_000, 25, 25, 3],
+  ] as const;
+  for (const [index, [elapsed, nextUsage, expectedUsage, calls]] of updates.entries()) {
     now = startedAt + elapsed;
     usedPercent = nextUsage;
     fixture.emitGatewayEvent("chat", {
@@ -98,12 +95,7 @@ it("updates the open popover after the Gateway deadline without per-run requests
       state: "final",
       message: { role: "assistant", content: [{ type: "text", text: "Done" }], timestamp: now },
     });
-    await waitForSolid(() =>
-      expect(
-        pane.element.querySelector(".context-usage__limit")?.textContent,
-        "refreshed usage",
-      ).toContain(String(expectedUsage) + "%"),
-    );
+    await expectUsage(expectedUsage);
     expect(auth).toHaveBeenCalledTimes(calls);
     expect(pane.element.querySelector<HTMLDetailsElement>(".context-usage details")?.open).toBe(
       true,
@@ -129,9 +121,7 @@ it.each(["failure", "session", "connection"] as const)(
       connected: true,
       modelAuthStatusResult: current,
     });
-    onTestFinished(() => {
-      vi.restoreAllMocks();
-    });
+    onTestFinished(() => vi.restoreAllMocks());
     const pending = refreshChatModelAuthStatus(state, "retiring-run");
     if (retirement === "failure") {
       response.reject(new Error("Usage refresh failed"));
