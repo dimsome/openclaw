@@ -14,6 +14,9 @@ import type { ThreadBindingRecord } from "./thread-bindings.types.js";
 const cfg = { channels: { discord: { token: "synthetic-token" } } };
 const account = { cfg, accountId: "default" };
 const webhook = { webhookId: "wh-1", webhookToken: "tok-1" };
+const revoked = () => {
+  throw new Error("Command owner was revoked");
+};
 const record: ThreadBindingRecord = {
   accountId: "default",
   channelId: "parent-1",
@@ -78,42 +81,30 @@ it("blocks revoked webhook creation before posting", async () => {
     await createWebhookForChannel({
       ...account,
       channelId: "c1",
-      assertCreateAllowed: () => {
-        throw new Error("Command owner was revoked");
-      },
+      assertCreateAllowed: revoked,
     }),
   ).toEqual({});
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
-it("strips the channel prefix before requesting its route", async () => {
-  mocks.get.mockResolvedValueOnce({ id: "123456789012345678", type: ChannelType.GuildText });
-  expect(
-    await resolveChannelIdForBinding({
-      ...account,
-      threadId: "channel:123456789012345678",
-    }),
-  ).toBe("123456789012345678");
-  expect(mocks.get.mock.calls[0]?.[0]).toBe("/channels/123456789012345678");
-});
-
-it("keeps a forum id instead of its parent category", async () => {
-  mocks.get.mockResolvedValueOnce({
-    id: "forum-1",
-    type: ChannelType.GuildForum,
-    parent_id: "category-1",
-  });
-  expect(await resolveChannelIdForBinding({ ...account, threadId: "forum-1" })).toBe("forum-1");
-});
+it.each([
+  ["channel:123456789012345678", "123456789012345678", ChannelType.GuildText],
+  ["forum-1", "forum-1", ChannelType.GuildForum],
+] as const)(
+  "resolves non-thread channel %s without using its category",
+  async (threadId, id, type) => {
+    mocks.get.mockResolvedValueOnce({ id, type, parent_id: "category-1" });
+    expect(await resolveChannelIdForBinding({ ...account, threadId })).toBe(id);
+    expect(mocks.get.mock.calls[0]?.[0]).toBe(`/channels/${id}`);
+  },
+);
 
 it.each([false, true])("blocks revoked binding notices (webhook=%s)", async (useWebhook) => {
   await maybeSendBindingMessage({
     cfg,
     record: { ...record, ...(useWebhook ? webhook : {}) },
     text: "Binding ready",
-    assertCurrent: () => {
-      throw new Error("Command owner was revoked");
-    },
+    assertCurrent: revoked,
   });
   expect(mocks.bot).not.toHaveBeenCalled();
   expect(mocks.webhook).not.toHaveBeenCalled();
