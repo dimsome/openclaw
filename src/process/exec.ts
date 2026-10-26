@@ -8,7 +8,7 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { copyOwnedBuffer } from "../shared/owned-buffer.js";
 import { hasChildProcessExited, releaseChildProcessOutputAfterExit } from "./child-process.js";
 import { resolveMaxOutputBytes, type CommandOutputStream } from "./exec-output.js";
-import { createSanitizedCommandError } from "./exec-result.js";
+import { CommandProcessCleanupError, createSanitizedCommandError } from "./exec-result.js";
 import { runCommandWithTimeout } from "./exec-runner.js";
 import {
   COMMAND_PROCESS_TREE_KILL_GRACE_MS,
@@ -361,6 +361,7 @@ export async function runCommandBuffered(
       termination,
       ...(outputLimitStream ? { outputLimitStream } : {}),
       ...(result.outputErrorStream ? { errorStream: result.outputErrorStream } : {}),
+      ...(result.cleanup === "uncertain" ? { error: new CommandProcessCleanupError() } : {}),
     };
   } catch (error) {
     const commandError = error instanceof Error ? error : new Error("Command execution failed");
