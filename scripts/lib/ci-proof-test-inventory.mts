@@ -2412,6 +2412,7 @@ export const PR_PROTECTED_RUNTIME_TEST_FILES: readonly string[] = [
   "src/gateway/approval-session-audience.test.ts",
   "src/gateway/board-http.test.ts",
   "src/gateway/board-store.test.ts",
+  "src/gateway/chat-auth-readiness.integration.test.ts",
   "src/gateway/chat-display-projection.cold-imports.test.ts",
   "src/gateway/chat-display-projection.cron.test.ts",
   "src/gateway/chat-display-projection.media.test.ts",

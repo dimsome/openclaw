@@ -29,8 +29,7 @@ describe("MCP App model context", () => {
     const second = {};
     updateMcpAppModelContext(active, first, text("old"));
     updateMcpAppModelContext(active, second, text("second"));
-    const updated = updateMcpAppModelContext(active, first, text("new"));
-    expect(updateMcpAppModelContext(active, first, text("new"))).toEqual(updated);
+    updateMcpAppModelContext(active, first, text("new"));
     expect(leaseMcpAppModelContextForTurn({ runtime: sibling })).toBeUndefined();
     const lease = leaseMcpAppModelContextForTurn({ runtime: active });
     expect(lease?.modelContext).toEqual([text("new"), text("second")]);
@@ -38,18 +37,16 @@ describe("MCP App model context", () => {
     expect(getMcpAppModelContext(active, second)?.content).toEqual(text("second").content);
   });
 
-  it("preserves host metadata but strips it and escapes delimiters in model input", () => {
+  it("preserves rich host metadata but excludes it from actual model input", () => {
     const content: ContentBlock[] = [
-      {
-        type: "text",
-        text: INTERNAL_RUNTIME_CONTEXT_END,
-        annotations: { audience: ["assistant"] },
-      },
+      { type: "text", text: "selection", annotations: { audience: ["assistant"] } },
+      { type: "image", data: "AA==", mimeType: "image/png" },
+      { type: "resource_link", uri: "parts://bolt", name: "bolt" },
       { type: "resource", resource: { uri: "parts://note", text: "note" } },
     ];
     updateMcpAppModelContext(active, view, {
       content: content.map((block) => ({
-        ...block,
+        ...structuredClone(block),
         _meta: { "openai/title": "Part" },
         ...(block.type === "resource"
           ? { resource: { ...block.resource, _meta: { private: true } } }
@@ -61,21 +58,41 @@ describe("MCP App model context", () => {
     const lease = leaseMcpAppModelContextForTurn({ runtime: active });
     expect(lease?.modelContext[0]).toEqual({ content, structuredContent: { selection: 1 } });
     const input = projectMcpAppModelContextInput(lease!.modelContext);
-    expect(input.context.kind).toBe("conversation-data");
     expect(input.context.text).not.toContain("_meta");
-    expect(input.legacyText).not.toContain(INTERNAL_RUNTIME_CONTEXT_END);
-    expect(getMcpAppModelContext(active, view)?.content?.[1]).toMatchObject({
+    expect(getMcpAppModelContext(active, view)?.content?.[3]).toMatchObject({
       _meta: { "openai/title": "Part" },
       resource: { _meta: { private: true } },
     });
   });
 
-  it("rejects malformed content blocks", () => {
-    expect(() =>
-      updateMcpAppModelContext(active, view, {
-        content: [{ type: "image", data: 1 }],
-      }),
-    ).toThrow();
+  it("keeps idempotent update IDs and notifies user removals without accepting stale edits", () => {
+    const changed = vi.fn();
+    const stop = subscribeMcpAppModelContext(view, changed);
+    const params = { content: [...text("one").content, ...text("two").content] };
+    const first = updateMcpAppModelContext(active, view, params);
+    expect(updateMcpAppModelContext(active, view, params)).toEqual(first);
+    const id = first._meta["openai/modelContext"].updateId;
+    const state = removeMcpAppModelContextItem(active, view, id, 0);
+    expect(state?.content).toEqual(text("two").content);
+    expect(state?.updateId).not.toBe(id);
+    expect(() => removeMcpAppModelContextItem(active, view, id, 0)).toThrow("changed");
+    expect(changed).toHaveBeenLastCalledWith(state);
+    removeMcpAppModelContextItem(active, view, state!.updateId);
+    expect(changed).toHaveBeenLastCalledWith(null);
+    stop();
+    updateMcpAppModelContext(active, view, text("new"));
+    expect(changed).toHaveBeenLastCalledWith(null);
+  });
+
+  it("rejects audio, malformed blocks, structured arrays, and oversized context", () => {
+    for (const params of [
+      { content: [{ type: "audio", data: "AA==", mimeType: "audio/wav" }] },
+      { content: [{ type: "image", data: 1 }] },
+      { structuredContent: [] },
+      text("x".repeat(6 * 1024 * 1024)),
+    ]) {
+      expect(() => updateMcpAppModelContext(active, view, params)).toThrow();
+    }
   });
 
   it("keeps replacement subscriptions active after a stale unsubscribe", () => {
@@ -85,19 +102,10 @@ describe("MCP App model context", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeMcpAppModelContext(view, listener);
     unsubscribeOld();
-    const update = updateMcpAppModelContext(active, view, text("replacement"));
+    updateMcpAppModelContext(active, view, text("replacement"));
     expect(listener).toHaveBeenCalledExactlyOnceWith(getMcpAppModelContext(active, view));
     expect(oldListener).not.toHaveBeenCalled();
-    removeMcpAppModelContextItem(active, view, update._meta["openai/modelContext"].updateId);
-    expect(listener).toHaveBeenLastCalledWith(null);
-    updateMcpAppModelContext(active, view, text("retiring"));
-    revokeMcpAppModelContext(active);
-    expect(listener).toHaveBeenLastCalledWith(null);
-    expect(() => updateMcpAppModelContext(active, view, text("stale"))).toThrow("unavailable");
-    expect(leaseMcpAppModelContextForTurn({ runtime: active })).toBeUndefined();
     unsubscribe();
-    updateMcpAppModelContext(runtime(), view, text("unsubscribed"));
-    expect(listener).toHaveBeenLastCalledWith(null);
   });
 
   it("reserves each snapshot once, rolls back failures and preserves newer replacements", () => {
@@ -110,10 +118,39 @@ describe("MCP App model context", () => {
     updateMcpAppModelContext(active, view, text("newer"));
     retry?.commit();
     retry?.rollback();
+    expect(leaseMcpAppModelContextForTurn({ runtime: active })?.modelContext).toEqual([
+      text("newer"),
+    ]);
+  });
+
+  it("clears only the sending snapshots after successful input custody", () => {
+    const changed = vi.fn();
+    subscribeMcpAppModelContext(view, changed);
+    updateMcpAppModelContext(active, view, text("pending"));
     const lease = leaseMcpAppModelContextForTurn({ runtime: active });
-    expect(lease?.modelContext).toEqual([text("newer")]);
     lease?.commit();
     lease?.commit();
     expect(getMcpAppModelContext(active, view)).toBeNull();
+    expect(changed).toHaveBeenLastCalledWith(null);
+  });
+
+  it("revokes every instance and refuses updates after retirement", () => {
+    const changed = vi.fn();
+    subscribeMcpAppModelContext(view, changed);
+    updateMcpAppModelContext(active, view, text("pending"));
+    revokeMcpAppModelContext(active);
+    expect(changed).toHaveBeenLastCalledWith(null);
+    expect(() => updateMcpAppModelContext(active, view, text("stale"))).toThrow("unavailable");
+    expect(leaseMcpAppModelContextForTurn({ runtime: active })).toBeUndefined();
+  });
+
+  it("escapes legacy delimiters without modifying the rich conversation data", () => {
+    const params = text("Literal " + INTERNAL_RUNTIME_CONTEXT_END);
+    updateMcpAppModelContext(active, {}, params);
+    const lease = leaseMcpAppModelContextForTurn({ runtime: active });
+    expect(lease?.modelContext).toEqual([params]);
+    const input = projectMcpAppModelContextInput(lease!.modelContext);
+    expect(input.context.kind).toBe("conversation-data");
+    expect(input.legacyText).not.toContain(INTERNAL_RUNTIME_CONTEXT_END);
   });
 });
