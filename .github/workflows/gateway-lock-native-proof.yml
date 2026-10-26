@@ -1,0 +1,150 @@
+name: Gateway lock native correctness proof
+
+on:
+  push:
+    branches: [proof/gateway-lock-mac]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-lock-native-proof
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NODE_DISABLE_COMPILE_CACHE: "1"
+
+jobs:
+  gateway-readiness:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    steps:
+      - name: Checkout pinned candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 0b024cd9edf284c021277f67b28673b75bce8c37
+          persist-credentials: false
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          source scripts/lib/swift-toolchain.sh
+          select_xcode_toolchain
+
+      - name: Setup Node environment
+        uses: ./.github/actions/setup-node-env
+        with:
+          node-version: "26.12.1"
+          cache-mode: restore
+          install-deps: "false"
+          install-bun: "false"
+
+      - name: Checkout pinned baseline
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: e512f2ad391e4594d68691e0632bac0198fb3782
+          path: baseline
+          persist-credentials: false
+
+      - name: Verify source identities
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 0b024cd9edf284c021277f67b28673b75bce8c37
+          test "$(git -C baseline rev-parse HEAD)" = e512f2ad391e4594d68691e0632bac0198fb3782
+          mkdir -p "$RUNNER_TEMP/gateway-lock-native"
+          printf 'baseline=e512f2ad391e4594d68691e0632bac0198fb3782\ncandidate=0b024cd9edf284c021277f67b28673b75bce8c37\n' > "$RUNNER_TEMP/gateway-lock-native/inputs.txt"
+          sw_vers
+          xcodebuild -version
+          swift --version
+          node --version
+
+      - name: Prepare baseline native assets
+        id: baseline-assets
+        working-directory: baseline
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --prefer-offline --optional \
+            --filter '@openclaw/mermaid-renderer...' --filter '@openclaw/gateway-protocol...' --filter 'openclaw...' \
+            --config.ignore-scripts=false --config.engine-strict=false \
+            --config.enable-pre-post-scripts=true --config.side-effects-cache=true
+          node scripts/prepare-apple-mermaid.mjs
+
+      - name: Build baseline Swift tests
+        id: baseline-build
+        working-directory: baseline
+        run: |
+          set -euo pipefail
+          swift build --package-path apps/macos --build-system native --enable-code-coverage \
+            --disable-index-store -Xswiftc -gline-tables-only --build-tests \
+            > "$RUNNER_TEMP/gateway-lock-native/baseline-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/gateway-lock-native/baseline-build.log"; exit 1; }
+          tail -n 20 "$RUNNER_TEMP/gateway-lock-native/baseline-build.log"
+
+      - name: Baseline GatewayProcessManagerTests
+        id: baseline-test
+        working-directory: baseline
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          source scripts/lib/swift-toolchain.sh
+          run_apple_command_logged "$RUNNER_TEMP/gateway-lock-native/baseline-tests.log" \
+            node scripts/test-macos-native.mts default \
+            --package-path apps/macos --build-system native --enable-code-coverage \
+            --disable-index-store -Xswiftc -gline-tables-only --skip-build \
+            --experimental-maximum-parallelization-width 3 --filter GatewayProcessManagerTests
+
+      - name: Prepare candidate native assets
+        id: candidate-assets
+        if: ${{ !cancelled() && steps.baseline-assets.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile --prefer-offline --optional \
+            --filter '@openclaw/mermaid-renderer...' --filter '@openclaw/gateway-protocol...' --filter 'openclaw...' \
+            --config.ignore-scripts=false --config.engine-strict=false \
+            --config.enable-pre-post-scripts=true --config.side-effects-cache=true
+          node scripts/prepare-apple-mermaid.mjs
+
+      - name: Build candidate Swift tests
+        id: candidate-build
+        if: ${{ !cancelled() && steps.candidate-assets.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          swift build --package-path apps/macos --build-system native --enable-code-coverage \
+            --disable-index-store -Xswiftc -gline-tables-only --build-tests \
+            > "$RUNNER_TEMP/gateway-lock-native/candidate-build.log" 2>&1 || { tail -n 100 "$RUNNER_TEMP/gateway-lock-native/candidate-build.log"; exit 1; }
+          tail -n 20 "$RUNNER_TEMP/gateway-lock-native/candidate-build.log"
+
+      - name: Candidate GatewayProcessManagerTests
+        id: candidate-test
+        if: ${{ !cancelled() && steps.candidate-build.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          source scripts/lib/swift-toolchain.sh
+          run_apple_command_logged "$RUNNER_TEMP/gateway-lock-native/candidate-tests.log" \
+            node scripts/test-macos-native.mts default \
+            --package-path apps/macos --build-system native --enable-code-coverage \
+            --disable-index-store -Xswiftc -gline-tables-only --skip-build \
+            --experimental-maximum-parallelization-width 3 --filter GatewayProcessManagerTests
+
+      - name: Record pair outcomes
+        if: always()
+        env:
+          BASELINE_BUILD: ${{ steps.baseline-build.outcome }}
+          BASELINE_TEST: ${{ steps.baseline-test.outcome }}
+          CANDIDATE_BUILD: ${{ steps.candidate-build.outcome }}
+          CANDIDATE_TEST: ${{ steps.candidate-test.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/gateway-lock-native"
+          printf 'baseline-build=%s\nbaseline-test=%s\ncandidate-build=%s\ncandidate-test=%s\n' \
+            "$BASELINE_BUILD" "$BASELINE_TEST" "$CANDIDATE_BUILD" "$CANDIDATE_TEST" \
+            | tee "$RUNNER_TEMP/gateway-lock-native/outcomes.txt" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload proof logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gateway-lock-native-correctness
+          path: ${{ runner.temp }}/gateway-lock-native
+          retention-days: 7
+          if-no-files-found: error
