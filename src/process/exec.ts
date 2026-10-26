@@ -8,7 +8,12 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { copyOwnedBuffer } from "../shared/owned-buffer.js";
 import { hasChildProcessExited, releaseChildProcessOutputAfterExit } from "./child-process.js";
 import { resolveMaxOutputBytes, type CommandOutputStream } from "./exec-output.js";
-import { CommandProcessCleanupError, createSanitizedCommandError } from "./exec-result.js";
+import {
+  CommandProcessCleanupError,
+  createSanitizedCommandError,
+  hasCommandProcessCleanupError,
+  readCommandProcessFailure,
+} from "./exec-result.js";
 import { runCommandWithTimeout } from "./exec-runner.js";
 import {
   COMMAND_PROCESS_TREE_KILL_GRACE_MS,
@@ -381,7 +386,11 @@ export async function runCommandBuffered(
       killed: false,
       termination: "error",
       ...(errorStream ? { errorStream } : {}),
-      error: commandError,
+      error:
+        readCommandProcessFailure(commandError)?.cleanup === "uncertain" &&
+        !hasCommandProcessCleanupError(commandError)
+          ? new CommandProcessCleanupError({ cause: commandError })
+          : commandError,
     };
   }
 }
