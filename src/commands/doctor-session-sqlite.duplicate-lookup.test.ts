@@ -13,16 +13,11 @@ import { retainedHistoryMove } from "./doctor-session-sqlite.recovery-fixtures.t
 
 it("keeps the first matching artifact when copies precede or follow the original", async () => {
   await withDuplicateArchives(3, async ({ artifacts, settle }) => {
-    const originals = artifacts.splice(0);
-    const copies = originals.map((item) => ({ ...item }));
-    artifacts.push(
-      ...originals.flatMap((item, index) =>
-        index % 2 ? [copies[index]!, item] : [item, copies[index]!],
-      ),
-    );
-    const expected = copies
-      .slice(1)
-      .map((item) => artifacts.find((candidate) => candidate.path === item.path)!);
+    const pairs = artifacts
+      .splice(0)
+      .map((item, index) => (index % 2 ? [{ ...item }, item] : [item, { ...item }]));
+    artifacts.push(...pairs.flat());
+    const expected = pairs.slice(1).map(([first]) => first!);
     const untouched = artifacts.filter((item) => !expected.includes(item));
     const before = untouched.map((item) => ({ ...item }));
     expect(await settle()).toMatchObject([{ issues: [{ code: "historical_duplicate_settled" }] }]);

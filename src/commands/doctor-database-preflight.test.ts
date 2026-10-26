@@ -16,6 +16,7 @@ import { closeStateDatabaseForTest } from "../test-utils/database-cleanup.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { prepareDoctorDatabasePreflight } from "./doctor-database-preflight.js";
 
+const oldVersion = OPENCLAW_AGENT_SCHEMA_VERSION - 1;
 it.each([false, true])(
   "keeps an idle WAL agent store's update generation when preserving sources: %s",
   async (preserveSourceArtifacts) => {
@@ -75,8 +76,8 @@ it.each([true, false])(
           meta_key TEXT PRIMARY KEY, role TEXT, schema_version INTEGER, agent_id TEXT,
           app_version TEXT, created_at INTEGER, updated_at INTEGER
         );
-        INSERT INTO schema_meta VALUES ('primary', 'agent', ${OPENCLAW_AGENT_SCHEMA_VERSION - 1}, 'retired-owner', 'fixture', 1, 1);
-        PRAGMA user_version=${OPENCLAW_AGENT_SCHEMA_VERSION - 1};
+        INSERT INTO schema_meta VALUES ('primary', 'agent', ${oldVersion}, 'retired-owner', 'fixture', 1, 1);
+        PRAGMA user_version=${oldVersion};
       `);
         fs.copyFileSync(state.path("fixture-writer.sqlite"), pathname);
         fs.copyFileSync(state.path("fixture-writer.sqlite-wal"), `${pathname}-wal`);
@@ -98,13 +99,9 @@ it.each([true, false])(
       const result = await prepareDoctorDatabasePreflight();
 
       expect(result).toMatchObject({ incompatible: [], indeterminate: [] });
-      expect(
-        result.pendingMigrations?.map(({ kind, path: databasePath, foundVersion }) => [
-          kind,
-          databasePath,
-          foundVersion,
-        ]) ?? [],
-      ).toEqual(knownHistory ? [["agent", pathname, OPENCLAW_AGENT_SCHEMA_VERSION - 1]] : []);
+      expect(result.pendingMigrations ?? []).toMatchObject(
+        knownHistory ? [{ kind: "agent", path: pathname, foundVersion: oldVersion }] : [],
+      );
       if (!knownHistory) {
         expect(result.agentDatabaseMigrationDiscovery?.discovery).toMatchObject({
           deletionJournal: {

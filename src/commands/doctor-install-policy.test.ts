@@ -31,39 +31,26 @@ async function policyConfig(decision: string, reason?: string): Promise<OpenClaw
 }
 
 function configWithPolicy(scriptPath: string): OpenClawConfig {
-  return {
-    security: {
-      installPolicy: {
-        enabled: true,
-        exec: {
-          source: "exec",
-          command: scriptPath,
-          trustedDirs: [path.dirname(scriptPath)],
-        },
-      },
-    },
+  const exec = {
+    source: "exec" as const,
+    command: scriptPath,
+    trustedDirs: [path.dirname(scriptPath)],
   };
+  return { security: { installPolicy: { enabled: true, exec } } };
 }
 
 it("returns no lines when install policy is disabled", async () => {
   await expect(collectInstallPolicyHealthLines({})).resolves.toEqual([]);
 });
 
-it("reports static availability without running the command by default", async () => {
-  const output = (
-    await collectInstallPolicyHealthLines(await policyConfig("block", "probe blocked"))
-  ).join("\n");
+it.each([false, true])("checks policy availability (deep=%s)", async (deep) => {
+  const config = await policyConfig(deep ? "allow" : "block", "probe blocked");
+  const output = (await collectInstallPolicyHealthLines(config, { deep })).join("\n");
   expect(output).toContain("Install policy enabled for: skill, plugin");
-  expect(output).toContain("Static checks passed");
+  expect(output).toContain(
+    deep ? "Deep check allowed the synthetic install request" : "Static checks passed",
+  );
   expect(output).not.toContain("probe blocked");
-});
-
-it("runs the synthetic probe in deep mode", async () => {
-  const lines = await collectInstallPolicyHealthLines(await policyConfig("allow"), {
-    deep: true,
-  });
-
-  expect(lines.join("\n")).toContain("Deep check allowed the synthetic install request");
 });
 
 it.each(["warn", "block"] as const)(
