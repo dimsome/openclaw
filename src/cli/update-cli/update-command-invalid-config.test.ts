@@ -117,7 +117,7 @@ it.each(["contention", "cleanup", "data-at-risk", "revoked"] as const)(
         serviceRestartSafe: false,
         dataAtRisk: "gateway-state-unverified",
       });
-      expect(result.failedStep.failureFacts).toEqual([
+      expect(result.failedStep?.failureFacts).toEqual([
         expect.objectContaining({ code: "gateway-ownership-unverified" }),
       ]);
       expect(JSON.stringify([result, vi.mocked(defaultRuntime.error).mock.calls])).not.toContain(

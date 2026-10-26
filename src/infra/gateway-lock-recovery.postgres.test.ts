@@ -27,7 +27,7 @@ describe.skipIf(!connection)("confirmed PostgreSQL Gateway owner recovery", () =
   const client = new pg.Client({ connectionString: connection });
   const namespaces: string[] = [];
   const quote = pg.escapeIdentifier;
-  let previousMachineIdentity: unknown;
+  let previousMachineIdentity: Parameters<typeof setEnvironmentData>[1];
   beforeAll(() => {
     previousMachineIdentity = getEnvironmentData(PROCESS_MACHINE_IDENTITY_KEY);
     // Native workers inherit the same synthetic machine fact as the maintenance owner.
@@ -112,9 +112,15 @@ describe.skipIf(!connection)("confirmed PostgreSQL Gateway owner recovery", () =
   }
 
   it.skipIf(process.platform !== "linux" && process.platform !== "darwin").each([
-    { machine: "same", identity: "a".repeat(64), state: "dead" },
-    { machine: "different", identity: "b".repeat(64), state: "unknown" },
-    { machine: "legacy", identity: undefined, state: "unknown" },
+    {
+      machine: "same",
+      identity: "a".repeat(64),
+      sameHost: false,
+      state: process.platform === "darwin" ? "dead" : "unknown",
+    },
+    { machine: "different", identity: "b".repeat(64), sameHost: false, state: "unknown" },
+    { machine: "legacy", identity: undefined, sameHost: false, state: "unknown" },
+    { machine: "unavailable", identity: null, sameHost: true, state: "dead" },
   ] as const)(
     "recovers the exact owner after reboot with $machine machine evidence",
     async (row) => {
@@ -123,6 +129,7 @@ describe.skipIf(!connection)("confirmed PostgreSQL Gateway owner recovery", () =
       if (!current || (current.platform !== "linux" && current.platform !== "darwin")) {
         throw new Error("Expected a supported PostgreSQL test host process namespace");
       }
+      const host = row.sameHost ? current.host : "host-before-reboot";
       await h.change(
         "UPDATE $namespace.state_leases SET payload_json=$1 WHERE scope='gateway-owner'",
         [
@@ -131,10 +138,10 @@ describe.skipIf(!connection)("confirmed PostgreSQL Gateway owner recovery", () =
               // A reused live PID must not preserve an owner from the identified machine's old boot.
               pid: process.pid,
               startedAt: getFileLockProcessStartTime(process.pid),
-              host: "host-before-reboot",
+              host,
               processNamespace: {
                 ...current,
-                host: "host-before-reboot",
+                host,
                 identity: "87654321-abcd-0123-abcd-0123456789ab",
               },
               machineIdentity: row.identity,

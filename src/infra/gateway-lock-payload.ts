@@ -141,18 +141,17 @@ export function classifyGatewayOwnerProcessNamespace(
   if (owner.platform !== current.platform) {
     return "unknown";
   }
-  if (
-    options.machineIdentity !== undefined &&
-    (owner.platform === "linux" || owner.platform === "darwin")
-  ) {
+  if (owner.platform === "darwin" && options.machineIdentity !== undefined) {
     const machine = MachineIdentitySchema.safeParse(options.machineIdentity).data;
     const currentMachine = readProcessMachineIdentity();
-    if (machine && currentMachine && machine !== currentMachine) {
-      return "unknown";
-    }
-    // A reboot kills every PID namespace on this machine, even if its hostname changed.
-    if (owner.identity !== current.identity) {
-      return machine && machine === currentMachine ? "dead" : "unknown";
+    if (machine && currentMachine) {
+      if (machine !== currentMachine) {
+        return "unknown";
+      }
+      // A reboot ends every process on this Mac, even if its hostname changed.
+      if (owner.identity !== current.identity) {
+        return "dead";
+      }
     }
   }
   // macOS hostnames can change within one boot; the kernel UUID still binds

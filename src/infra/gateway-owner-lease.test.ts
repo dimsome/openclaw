@@ -189,19 +189,26 @@ function readFreshProcessNamespace() {
 
 describe("Gateway owner lease", () => {
   it.runIf(process.platform === "darwin" || process.platform === "linux").each([
-    { kind: "same machine", machine: "a".repeat(64), reclaim: true },
-    { kind: "different machine", machine: "b".repeat(64), reclaim: false },
-    { kind: "legacy", machine: undefined, reclaim: false },
-  ])("handles a renamed previous-boot $kind lease", async ({ machine, reclaim }) => {
+    {
+      kind: "same machine",
+      machine: "a".repeat(64),
+      sameHost: false,
+      reclaim: process.platform === "darwin",
+    },
+    { kind: "different machine", machine: "b".repeat(64), sameHost: false, reclaim: false },
+    { kind: "legacy", machine: undefined, sameHost: false, reclaim: false },
+    { kind: "unavailable", machine: null, sameHost: true, reclaim: true },
+  ])("handles a previous-boot $kind lease", async ({ machine, sameHost, reclaim }) => {
     vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue("a".repeat(64));
     await using owner = fixture();
     const namespace = readFreshProcessNamespace();
+    const host = sameHost ? namespace?.host : "previous-hostname";
     seedOwner(owner.env, {
-      host: "previous-hostname",
+      host,
       machineIdentity: machine,
       processNamespace: {
         ...namespace,
-        host: "previous-hostname",
+        host,
         identity: "87654321-abcd-0123-abcd-0123456789ab",
       },
     });
@@ -212,7 +219,8 @@ describe("Gateway owner lease", () => {
     }
     await owner.acquire().ready;
     const lease = readGatewayOwnerLease({ env: owner.env });
-    expect(lease).toMatchObject({ state: "live", machineIdentity: "a".repeat(64) });
+    expect(lease?.state).toBe("live");
+    expect(lease?.machineIdentity).toBe(process.platform === "darwin" ? "a".repeat(64) : undefined);
     const row = withOpenClawStateStartupMigrationCheckpointDatabase(
       (db) =>
         db
@@ -754,7 +762,9 @@ describe("Gateway owner lease", () => {
         host: hostname(),
         processNamespace: readGatewayLockProcessNamespace(),
         heartbeatAt: expect.any(Number),
-        machineIdentity: machineIdentity.readProcessMachineIdentity(),
+        ...(process.platform === "darwin"
+          ? { machineIdentity: machineIdentity.readProcessMachineIdentity() }
+          : {}),
         startedAt: pidAlive.getFileLockProcessStartTime(process.pid),
         port: 19483,
         mode: "foreground",

@@ -157,7 +157,9 @@ describe("gateway lock namespaces", () => {
         expect(acquired).not.toBeNull();
         for (const file of [paths.ownerLockPath, paths.stateLockPath]) {
           const record = JSON.parse(await fs.readFile(file, "utf8"));
-          expect(record.machineIdentity).toBe("a".repeat(64));
+          expect(record.machineIdentity).toBe(
+            process.platform === "darwin" ? "a".repeat(64) : undefined,
+          );
           const oldReader = shippedLockPayloadSchema.parse(record);
           expect(oldReader.processNamespace).toEqual(record.processNamespace);
           expect(oldReader).not.toHaveProperty("machineIdentity");
@@ -166,6 +168,57 @@ describe("gateway lock namespaces", () => {
       } finally {
         await acquired?.release();
       }
+    },
+  );
+
+  it.each([
+    {
+      kind: "unavailable owner",
+      machine: null,
+      localMachine: "a".repeat(64),
+      sameHost: true,
+      state: "dead",
+    },
+    {
+      kind: "unavailable local",
+      machine: "a".repeat(64),
+      localMachine: null,
+      sameHost: true,
+      state: "dead",
+    },
+    {
+      kind: "cloned",
+      machine: "a".repeat(64),
+      localMachine: "a".repeat(64),
+      sameHost: false,
+      state: "unknown",
+    },
+    {
+      kind: "changed",
+      machine: "b".repeat(64),
+      localMachine: "a".repeat(64),
+      sameHost: true,
+      state: "dead",
+    },
+  ] as const)(
+    "preserves Linux previous-boot classification with $kind machine evidence",
+    async (row) => {
+      const env = await makeEnv();
+      const namespace = mockLinuxNamespace(env.OPENCLAW_STATE_DIR);
+      vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue(row.localMachine);
+      const payload = {
+        ...createLockPayload({ configPath: env.OPENCLAW_CONFIG_PATH, startTime: 1 }),
+        machineIdentity: row.machine,
+        processNamespace: {
+          ...namespace,
+          host: row.sameHost ? namespace.host : "another-host",
+          identity: "87654321-abcd-0123-abcd-0123456789ab",
+          pidNsInode: "other-pid-namespace",
+        },
+      };
+      await expect(resolveGatewayOwnerStatus(process.pid, payload, "linux")).resolves.toBe(
+        row.state,
+      );
     },
   );
 

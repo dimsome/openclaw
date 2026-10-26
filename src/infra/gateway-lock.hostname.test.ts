@@ -17,7 +17,12 @@ const roots = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => vi.restoreAllMocks());
 
 it.runIf(process.platform === "darwin" || process.platform === "linux").each([
-  { kind: "same machine", machine: "a".repeat(64), localMachine: "a".repeat(64), reclaim: true },
+  {
+    kind: "same machine",
+    machine: "a".repeat(64),
+    localMachine: "a".repeat(64),
+    reclaim: process.platform === "darwin",
+  },
   {
     kind: "different machine",
     machine: "b".repeat(64),
@@ -28,7 +33,7 @@ it.runIf(process.platform === "darwin" || process.platform === "linux").each([
     kind: "different machine with same hostname",
     machine: "b".repeat(64),
     localMachine: "a".repeat(64),
-    reclaim: false,
+    reclaim: process.platform === "linux",
   },
   {
     kind: "unavailable local machine",
@@ -48,9 +53,21 @@ it.runIf(process.platform === "darwin" || process.platform === "linux").each([
     localMachine: "a".repeat(64),
     reclaim: false,
   },
+  {
+    kind: "unavailable local machine with same hostname",
+    machine: "a".repeat(64),
+    localMachine: null,
+    reclaim: true,
+  },
+  {
+    kind: "unavailable owner machine with same hostname",
+    machine: null,
+    localMachine: "a".repeat(64),
+    reclaim: true,
+  },
   { kind: "legacy owner", machine: undefined, localMachine: "a".repeat(64), reclaim: false },
 ])(
-  "handles a renamed previous-boot owner from a $kind",
+  "handles a previous-boot owner from a $kind",
   async ({ kind, machine, localMachine, reclaim }) => {
     vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue(localMachine);
     const namespace = readGatewayLockProcessNamespace();
@@ -68,8 +85,7 @@ it.runIf(process.platform === "darwin" || process.platform === "linux").each([
       machineIdentity: machine,
       processNamespace: {
         ...namespace,
-        host:
-          kind === "different machine with same hostname" ? namespace.host : "previous-hostname",
+        host: kind.endsWith("same hostname") ? namespace.host : "previous-hostname",
         identity: "87654321-abcd-0123-abcd-0123456789ab",
       },
     };
