@@ -64,7 +64,9 @@ function createCommitFixture(options: CommitOptions = {}) {
             authorize();
             accepted.resolve();
           },
-          withWriteAdmission: (run) => runOpenClawAgentWorkerWrite(databaseOptions, run),
+          withWriteAdmission: async (run) => {
+            await runOpenClawAgentWorkerWrite(databaseOptions, run);
+          },
         }),
       );
       return pending;
