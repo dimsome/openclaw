@@ -7,22 +7,11 @@ import type { ExecApprovalRequest } from "../../app/exec-approval.ts";
 import {
   createGatewayHarness,
   createSessions,
-  catalogPage,
   mountSidebar,
   type SidebarLifecycleState,
 } from "../app-sidebar.ts";
 import { sessionListResult } from "../chat-model.ts";
-import { settleLitElement } from "../lit-settle.ts";
 import { waitForFast } from "../wait-for.ts";
-
-export async function publishCatalog(
-  sidebar: SidebarLifecycleState,
-  catalogs: ReturnType<typeof catalogPage>["catalogs"],
-) {
-  sidebar.sessionData.sessionCatalogs = catalogs;
-  sidebar.sessionData.requestSessionDataUpdate();
-  await settleLitElement(sidebar);
-}
 
 const catalogHello = {
   auth: { role: "operator", scopes: ["operator.read"] },
