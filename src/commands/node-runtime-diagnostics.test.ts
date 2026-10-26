@@ -68,7 +68,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
   tty.restore();
 });
 
@@ -108,21 +107,11 @@ it("keeps repair guidance in JSON despite invalid config", async () => {
   const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   expect(await runDoctorLintCli(runtime, { json: true })).toBe(1);
   const payload = JSON.parse(String(stdout.mock.calls.at(-1)?.[0]));
-  expect(payload.findings).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ checkId: "core/doctor/final-config-validation" }),
-      expect.objectContaining({
-        checkId: nodeCheck,
-        message: contains("26.0.0"),
-        fixHint: repairHint,
-      }),
-      expect.objectContaining({
-        source: "gateway-service",
-        message: contains("22.23.2"),
-        fixHint: repairHint,
-      }),
-    ]),
-  );
+  const expectFinding = (shape: object) =>
+    expect(payload.findings).toContainEqual(expect.objectContaining(shape));
+  expectFinding({ checkId: "core/doctor/final-config-validation" });
+  expectFinding({ checkId: nodeCheck, message: contains("26.0.0"), fixHint: repairHint });
+  expectFinding({ source: "gateway-service", message: contains("22.23.2"), fixHint: repairHint });
 });
 
 it.each(["unsupported", "probe-failed"] as const)(

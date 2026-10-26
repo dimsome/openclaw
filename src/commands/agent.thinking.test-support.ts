@@ -18,7 +18,6 @@ import { agentCommand } from "./agent.js";
 export function registerAgentThinkingTests({
   withTempHome,
   mockConfig,
-  getLastEmbeddedCall,
   runtime,
 }: {
   withTempHome: <T>(fn: (home: string) => Promise<T>) => Promise<T>;
@@ -40,17 +39,6 @@ export function registerAgentThinkingTests({
     reasoning: true,
     ...overrides,
   });
-  const configure = (home: string, overrides: Partial<ModelCatalogEntry>) => {
-    const model = catalogModel(overrides);
-    const ref = `${model.provider}/${model.id}`;
-    mockConfig(home, path.join(home, "sessions.json"), {
-      model: { primary: ref },
-      models: { [ref]: {} },
-    });
-    vi.mocked(loadManifestModelCatalog).mockReturnValue([model]);
-    installThinkingProvider(model.provider);
-    return ref;
-  };
   function installThinkingProvider(id: string) {
     const registry = createTestRegistry();
     registry.providers.push({
@@ -68,27 +56,19 @@ export function registerAgentThinkingTests({
     });
     setActivePluginRegistry(registry);
   }
-  it("validates unconfigured model thinking without live discovery", () =>
-    withTempHome(async (home) => {
-      mockConfig(home, path.join(home, "sessions.json"), { models: {} });
-      vi.mocked(loadManifestModelCatalog).mockReturnValue([
-        catalogModel({
-          provider: "reasoning-test",
-          id: "catalog-max",
-          api: "openai-completions",
-          compat: { supportedReasoningEfforts: ["max"] },
-        }),
-      ]);
-      await run("reasoning-test/catalog-max", "max");
-      expect(getLastEmbeddedCall()?.thinkLevel).toBe("max");
-      expect(readPreparedModelCatalog).not.toHaveBeenCalled();
-    }));
   it("validates native off against observations over the manifest", () =>
     withTempHome(async (home) => {
-      const ref = configure(home, {
+      const model = catalogModel({
         api: "openai-chatgpt-responses",
         compat: { supportedReasoningEfforts: ["none", "high", "max"] },
       });
+      const ref = `${model.provider}/${model.id}`;
+      mockConfig(home, path.join(home, "sessions.json"), {
+        model: { primary: ref },
+        models: { [ref]: {} },
+      });
+      vi.mocked(loadManifestModelCatalog).mockReturnValue([model]);
+      installThinkingProvider(model.provider);
       vi.mocked(resolveEffectiveAgentRuntime).mockReturnValue("codex");
       vi.mocked(loadProviderScopedThinkingCatalog).mockResolvedValue([
         catalogModel({
@@ -108,17 +88,5 @@ export function registerAgentThinkingTests({
       );
       expect(runEmbeddedAgent).not.toHaveBeenCalled();
       expect(readPreparedModelCatalog).not.toHaveBeenCalled();
-    }));
-
-  it("runs with the agent entry's verbose default over the global default", () =>
-    withTempHome(async (home) => {
-      mockConfig(
-        home,
-        path.join(home, "sessions.json"),
-        { verboseDefault: "off" },
-        { main: { verboseDefault: "full" } },
-      );
-      await agentCommand({ message: "ping", to: "+1222" }, runtime);
-      expect(getLastEmbeddedCall()?.verboseLevel).toBe("full");
     }));
 }

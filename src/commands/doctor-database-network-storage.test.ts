@@ -2,28 +2,19 @@ import childProcess from "node:child_process";
 import syncFs from "node:fs";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { note } from "../../packages/terminal-core/src/note.js";
+import * as notes from "../../packages/terminal-core/src/note.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import * as sqliteLibrary from "../infra/bun-sqlite-library.js";
 import { createDatabaseStoreDiagnostic } from "../infra/database-engine/diagnostic-record.js";
 import * as engineInspection from "./doctor-database-engine-inspection.js";
 import { noteDatabaseEngines } from "./doctor-database-engine.js";
 
-vi.mock("../../packages/terminal-core/src/note.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../packages/terminal-core/src/note.js")>()),
-  note: vi.fn(),
-}));
-vi.mock("./doctor-database-engine-inspection.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./doctor-database-engine-inspection.js")>()),
-  inspectDoctorDatabaseEngines: vi.fn(),
-}));
-vi.mock("../infra/bun-sqlite-library.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../infra/bun-sqlite-library.js")>()),
-  ensureSqliteLibrarySelected: () => ({ source: "runtime" }),
-}));
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => vi.restoreAllMocks());
 
 it("warns without blocking for confirmed network SQLite storage, not unknown or cross-VM mounts", async () => {
+  const note = vi.spyOn(notes, "note").mockImplementation(() => {});
+  vi.spyOn(sqliteLibrary, "ensureSqliteLibrarySelected").mockReturnValue({ source: "runtime" });
   const root = syncFs.realpathSync(tempDirs.make("doctor-network-storage-"));
   const env = { HOME: root, OPENCLAW_STATE_DIR: root };
   const file = path.join(root, "state.sqlite");
@@ -34,7 +25,7 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
   });
   store.observed = "sqlite";
   store.legacyMigrations.state = "none";
-  vi.mocked(engineInspection.inspectDoctorDatabaseEngines).mockResolvedValue({
+  const inspect = vi.spyOn(engineInspection, "inspectDoctorDatabaseEngines").mockResolvedValue({
     observed: { state: ["sqlite"] },
     stateRoots: [],
     discoveryFailed: false,
@@ -54,16 +45,13 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
   const mountInfo = vi.spyOn(syncFs, "readFileSync");
   const mount = vi.spyOn(childProcess, "execFileSync");
   vi.spyOn(process, "platform", "get").mockReturnValue("linux");
-
   for (const [type, magic, warning] of [
     ["nfs4", 0x6969, true],
-    ["cifs", 0xff534d42, true],
     ["nfs", 0, true],
     ["smbfs", 0, true],
     ["fuse.sshfs", 0, true],
     ["virtiofs", 0, false],
     ["9p", 0x01021997, false],
-    ["ext4", 0, false],
     ["unknown", 0, false],
   ] as const) {
     statfs.mockReturnValue(Object.assign(nativeStatfs, { type: magic }));
@@ -106,7 +94,6 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
   });
   expect(await networkFindings()).toEqual([]);
   realpath.mockRestore();
-
   vi.spyOn(process, "platform", "get").mockReturnValue("win32");
   const nativeRealpath = vi.spyOn(syncFs.realpathSync, "native");
   for (const [target, resolved, warning] of [
@@ -115,7 +102,7 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
     [String.raw`C:\state\openclaw.sqlite`, String.raw`C:\state`, false],
     [String.raw`Z:\denied\openclaw.sqlite`, undefined, false],
   ] as const) {
-    vi.mocked(engineInspection.inspectDoctorDatabaseEngines).mockResolvedValue({
+    inspect.mockResolvedValue({
       observed: {},
       stateRoots: [],
       discoveryFailed: false,

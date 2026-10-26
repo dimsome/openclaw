@@ -20,6 +20,8 @@ const runtime = createTestRuntime();
 const prompter = createDoctorPrompter({ runtime, options: { yes: true, force: true } });
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const note = vi.fn();
+const expectNote = (message: unknown, heading: unknown = "UI") =>
+  expect(note).toHaveBeenCalledWith(message, heading);
 const buildId = "doctor-runtime-build";
 let root: string;
 let build: MockInstance<typeof assets.ensureControlUiAssetsBuilt>;
@@ -63,10 +65,8 @@ it("routes missing app-owned assets to the host without package or git commands"
     MACOS_APP_INSTALL_OWNER_MARKER,
   );
   await repair();
-
-  expect(note).toHaveBeenCalledWith(
+  expectNote(
     expect.stringContaining("Managed by OpenClaw.app. Update OpenClaw.app to update this Gateway."),
-    "UI",
   );
   for (const fn of [prompter.confirmAutoFix, prompter.confirmAggressiveAutoFix, build, git]) {
     expect(fn).not.toHaveBeenCalled();
@@ -90,8 +90,8 @@ it.each([false, true])("repairs source assets (protocol changed=%s)", async (for
   expect(git).toHaveBeenCalledTimes(force ? 1 : 0);
   if (force) {
     expect(prompter.confirmAutoFix).not.toHaveBeenCalled();
-    expect(note).toHaveBeenCalledWith("UI rebuild complete.", "UI");
-    expect(note).toHaveBeenCalledWith(expect.stringContaining("ui:build"), "UI Freshness");
+    expectNote("UI rebuild complete.");
+    expectNote(expect.stringContaining("ui:build"), "UI Freshness");
   }
 });
 
@@ -105,7 +105,7 @@ it.each([false, true])("leaves packaged assets untouched (dev build=%s)", async 
   if (dev) {
     expect(note).not.toHaveBeenCalled();
   } else {
-    expect(note).toHaveBeenCalledWith(
+    expectNote(
       expect.stringContaining("Reinstall OpenClaw to restore bundled Control UI assets."),
       expect.any(String),
     );
@@ -120,9 +120,7 @@ it("reports owner-normalized build failures instead of claiming repair success",
     ok: false,
     message: "Control UI build failed: spawn ENOENT",
   });
-
   await repair();
-
-  expect(note).toHaveBeenCalledWith("Control UI build failed: spawn ENOENT", "UI");
+  expectNote("Control UI build failed: spawn ENOENT");
   expect(note).not.toHaveBeenCalledWith("UI build complete.", "UI");
 });
