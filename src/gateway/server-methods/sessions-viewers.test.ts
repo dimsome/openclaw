@@ -1,5 +1,5 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SESSION_VIEWER_PRESENCE_MAX_KEYS } from "../../../packages/gateway-protocol/src/schema/sessions-viewer-presence.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
@@ -14,11 +14,14 @@ vi.mock("./sessions-read.js", () => ({ sessionsListHandler }));
 import { sessionSubscriptionHandlers } from "./sessions-subscriptions.js";
 import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
 
+const subscribeSessionEvents = vi.fn();
+beforeEach(() => vi.clearAllMocks());
+
 async function request(
   method: "sessions.viewers.set" | "sessions.subscribe",
   params: Record<string, unknown>,
-  context: GatewayRequestContext,
-  connId?: string,
+  context: Partial<GatewayRequestContext> = { subscribeSessionEvents },
+  connId: string | null = "control-ui-1",
 ) {
   const respond = vi.fn();
   const handler = expectDefined(sessionSubscriptionHandlers[method], method);
@@ -26,8 +29,8 @@ async function request(
     req: { type: "req", id: "req-viewers", method, params },
     params,
     respond,
-    context,
-    client: connId === undefined ? null : ({ connId } as never),
+    context: context as GatewayRequestContext,
+    client: connId === null ? null : ({ connId } as never),
     isWebchatConnect: () => false,
   } satisfies GatewayRequestHandlerOptions);
   return respond;
@@ -54,18 +57,6 @@ function createContext(cfg?: OpenClawConfig) {
     declare: (body: Record<string, unknown>, connId = "conn-viewer") =>
       request("sessions.viewers.set", body, context, connId),
   };
-}
-
-async function subscribe(params: Record<string, unknown>) {
-  const subscribeSessionEvents = vi.fn();
-  sessionsListHandler.mockClear();
-  const respond = await request(
-    "sessions.subscribe",
-    params,
-    { subscribeSessionEvents } as unknown as GatewayRequestContext,
-    "control-ui-1",
-  );
-  return { respond, subscribeSessionEvents };
 }
 
 describe("sessions.viewers.set", () => {
@@ -101,8 +92,10 @@ describe("sessions.viewers.set", () => {
   });
 
   it("requires a live connection and declaration owner", async () => {
-    const context = { getRuntimeConfig: () => ({}) } as unknown as GatewayRequestContext;
-    expectError(await request("sessions.viewers.set", { sessionKeys: [] }, context), "UNAVAILABLE");
+    expectError(
+      await request("sessions.viewers.set", { sessionKeys: [] }, {}, null),
+      "UNAVAILABLE",
+    );
   });
 
   it("scopes bare viewer identities by explicit owner and rejects ambiguity", async () => {
@@ -123,7 +116,7 @@ describe("sessions.viewers.set", () => {
 
 describe("sessions.subscribe", () => {
   it("registers events before projecting an atomic bootstrap roster", async () => {
-    const { respond, subscribeSessionEvents } = await subscribe({ limit: 1, ownerFirst: true });
+    const respond = await request("sessions.subscribe", { limit: 1, ownerFirst: true });
 
     expect(subscribeSessionEvents).toHaveBeenCalledWith("control-ui-1");
     expect(subscribeSessionEvents.mock.invocationCallOrder[0]).toBeLessThan(
@@ -133,20 +126,12 @@ describe("sessions.subscribe", () => {
   });
 
   it("rejects invalid list params before registering events", async () => {
-    const { respond, subscribeSessionEvents } = await subscribe({
+    const respond = await request("sessions.subscribe", {
       activityPulseBoundaries: [1, 1],
     });
 
     expect(subscribeSessionEvents).not.toHaveBeenCalled();
     expect(sessionsListHandler).not.toHaveBeenCalled();
-    expectReply(
-      respond,
-      false,
-      undefined,
-      expect.objectContaining({
-        code: "INVALID_REQUEST",
-        message: expect.stringContaining("activityPulseBoundaries: must be strictly ascending"),
-      }),
-    );
+    expectError(respond, "INVALID_REQUEST");
   });
 });

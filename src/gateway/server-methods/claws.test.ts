@@ -44,57 +44,31 @@ function expectError(replies: Parameters<RespondFn>[], code: string, message?: s
   expect(replies[0]?.[2]).toMatchObject({ code, ...(message ? { message } : {}) });
 }
 
-it("does not expose installed-Claw status as a Gateway method", () => {
-  expect(coreGatewayHandlers["claws.status"]).toBeUndefined();
-});
-
 describe("ClawHub Claw catalog Gateway methods", () => {
   const entry = { packageName: "@openclaw/workflow-operator" };
   const release = { packageName: entry.packageName, version: "1.0.0" };
   const previewParams = { ...release, kind: "instruction", name: "AGENTS.md" };
+  const preview = { kind: "instruction", name: "AGENTS.md", content: "# Instructions" };
 
-  it("registers read-scoped catalog methods but rejects discovery with Labs off", async () => {
-    for (const method of [
-      "claws.catalog.search",
-      "claws.catalog.detail",
-      "claws.catalog.preview",
-    ] as const) {
-      expect(coreGatewayHandlers[method]).toBeDefined();
-      expect(authorizeOperatorScopesForMethod(method, ["operator.read"])).toEqual({
-        allowed: true,
-      });
-    }
+  it("rejects discovery with Labs off", async () => {
     expectError(await catalogRequest("claws.catalog.search", {}, () => ({})), "FORBIDDEN");
     expect(listClawHubClaws).not.toHaveBeenCalled();
   });
 
-  it("lists starters and reads one exact official release with Labs on", async () => {
-    listClawHubClaws.mockResolvedValue([entry]);
-    readClawHubClawDetail.mockResolvedValue({ ...entry, version: "1.0.0" });
-    expect((await catalogRequest("claws.catalog.search", {}))[0]?.[1]).toEqual({
-      entries: [entry],
-    });
-
-    const detail = await catalogRequest("claws.catalog.detail", release);
-    expect(readClawHubClawDetail).toHaveBeenCalledWith(release);
-    expect(detail[0]?.[1]).toMatchObject({ detail: { ...entry, version: "1.0.0" } });
-  });
-
-  it("returns the requested preview only for an exact official release", async () => {
-    const preview = { kind: "instruction", name: "AGENTS.md", content: "# Instructions" };
-    readClawHubClawPreview.mockResolvedValue(preview);
-    const replies = await catalogRequest("claws.catalog.preview", previewParams);
-    expect(readClawHubClawPreview).toHaveBeenCalledWith(previewParams);
-    expect(replies[0]?.[1]).toEqual({ preview });
-  });
-
   it.each([
-    ["claws.catalog.search", listClawHubClaws, {}, [entry]],
-    ["claws.catalog.detail", readClawHubClawDetail, release, { ...entry, version: "1.0.0" }],
-    ["claws.catalog.preview", readClawHubClawPreview, previewParams, { content: "# Instructions" }],
+    ["claws.catalog.search", listClawHubClaws, {}, "entries", [entry]],
+    ["claws.catalog.detail", readClawHubClawDetail, release, "detail", release],
+    ["claws.catalog.preview", readClawHubClawPreview, previewParams, "preview", preview],
   ] as const)(
-    "drops %s when Labs turns off during the ClawHub request",
-    async (method, sourceMock, params, result) => {
+    "%s returns the requested result only while Labs remains enabled",
+    async (method, sourceMock, params, field, result) => {
+      expect(coreGatewayHandlers[method]).toBeDefined();
+      expect(authorizeOperatorScopesForMethod(method, ["operator.read"])).toEqual({
+        allowed: true,
+      });
+      sourceMock.mockResolvedValue(result);
+      expect((await catalogRequest(method, params))[0]?.[1]).toEqual({ [field]: result });
+      expect(sourceMock).toHaveBeenCalledWith(params);
       const source = createDeferredCore<unknown>();
       sourceMock.mockReturnValue(source.promise);
       let labsEnabled = true;

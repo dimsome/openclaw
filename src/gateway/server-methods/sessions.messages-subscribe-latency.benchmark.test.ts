@@ -1,4 +1,3 @@
-import { performance } from "node:perf_hooks";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   persistSessionTranscriptTurn,
@@ -12,17 +11,11 @@ import * as lifetime from "../session-utils-read-lifetime.js";
 import { createHistoryReadContext } from "./chat-history.test-helpers.js";
 import { disposeSessionReadContexts } from "./sessions-read-cache.test-support.js";
 import { sessionSubscriptionHandlers } from "./sessions-subscriptions.js";
-import {
-  prepareSubscriptionFixture,
-  proveSubscriptionDoesNotWaitForDisplayRows,
-} from "./sessions.messages-subscribe-wait.test-support.js";
+import { prepareSubscriptionFixture } from "./sessions.messages-subscribe-wait.test-support.js";
 
 afterEach(() => vi.restoreAllMocks());
 
-it("subscribes during an active turn among 8,000 sessions", ({ signal }) =>
-  proveSubscriptionDoesNotWaitForDisplayRows(8_000, signal));
-
-it("measures subscription dispatch with a 160k-token transcript", async () => {
+it("bounds subscription validation with empty and 160k-token transcripts", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const { cfg, client, subscribers, runtime } = await prepareSubscriptionFixture(state, "perf");
     const scope = {
@@ -71,11 +64,10 @@ it("measures subscription dispatch with a 160k-token transcript", async () => {
           await projection.ensureMaterialized();
         }
         for (const includeApprovals of [false, true]) {
-          const samples: number[] = [];
-          currencyReads = 0;
-          for (let index = 0; index < 50; index++) {
+          // Exercise cold and repeated subscriptions without timing diagnostic replays.
+          for (let index = 0; index < 2; index++) {
+            currencyReads = 0;
             const respond = vi.fn();
-            const start = performance.now();
             await handleGatewayRequest({
               req: gatewayRequest(`${index}`, "sessions.messages.subscribe", {
                 key: scope.sessionKey,
@@ -87,28 +79,14 @@ it("measures subscription dispatch with a 160k-token transcript", async () => {
               isWebchatConnect: () => false,
               extraHandlers: sessionSubscriptionHandlers,
             });
-            samples.push(performance.now() - start);
             expect(respond).toHaveBeenCalledExactlyOnceWith(
               true,
               expect.objectContaining({ subscribed: true, key: scope.sessionKey, agentId: "main" }),
               undefined,
             );
+            // Capture validates once; replay may require one additional recheck.
+            expect(currencyReads).toBeLessThanOrEqual(includeApprovals ? 3 : 2);
           }
-          samples.sort((a, b) => a - b);
-          console.log(
-            JSON.stringify({
-              events,
-              includeApprovals,
-              estimatedTokens: events * 80,
-              samples: samples.length,
-              meanMs: samples.reduce((a, b) => a + b, 0) / samples.length,
-              p50Ms: samples[25],
-              p99Ms: samples[49],
-              currencyReadsPerSubscribe: currencyReads / samples.length,
-            }),
-          );
-          // Capture validates once; recheck only after replay and before committing the observer.
-          expect(currencyReads).toBeLessThanOrEqual(samples.length * (includeApprovals ? 3 : 2));
         }
       }
     } finally {

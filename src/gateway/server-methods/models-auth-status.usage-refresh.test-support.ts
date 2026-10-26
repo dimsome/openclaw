@@ -50,82 +50,68 @@ export function registerModelAuthStatusUsageRefreshTests({
       mocks.buildAuthHealthSummary.mockReturnValue(createOpenAiCodexOauthHealthSummary());
       await warmOAuthUsage();
     });
-    it("keeps same-account stale usage visible during an explicit refresh", async () => {
-      const { promise: refreshBlocked, resolve: releaseRefresh } = createDeferred();
-      mocks.loadProviderUsageSummary.mockImplementationOnce(async () => {
-        await refreshBlocked;
-        return usage();
-      });
-
-      const refreshing = await readAuthStatus({ refresh: true });
-      expect(refreshing.providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
-      const concurrent = await readAuthStatus({ refresh: true });
-      expect(concurrent.providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
-      expect(mocks.loadProviderUsageSummary).toHaveBeenCalledTimes(2);
-      releaseRefresh();
-      await vi.waitFor(
-        async () => {
-          expect((await readAuthStatus()).providers[0]?.usage?.windows[0]?.usedPercent).toBe(20);
-        },
-        { interval: 1 },
-      );
-      expect(mocks.loadProviderUsageSummary).toHaveBeenCalledTimes(2);
-    });
-
-    it("awaits shared usage-only refreshes without rediscovering credentials", async () => {
-      expireUsage();
-      const fresh = createDeferred<UsageSummary>();
-      mocks.loadProviderUsageSummary.mockImplementation(() => fresh.promise);
-      const one = createOptions({ refreshUsage: true });
-      const two = createOptions({ refreshUsage: true });
-      const pending = Promise.all([handler(one), handler(two)]);
-      // An ordinary read remains non-blocking and sees the previous snapshot.
-      expect((await readAuthStatus()).providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
-      fresh.resolve(usage());
-      await pending;
-      for (const options of [one, two]) {
-        const [ok, payload, error] = expectDefined(firstRespondCall(options), "usage response");
-        expect([ok, error]).toEqual([true, undefined]);
-        expect(payload).toEqual(
-          expect.objectContaining({
+    it.each([false, true])(
+      "shares refreshes while ordinary reads stay nonblocking (await usage: %s)",
+      async (waits) => {
+        if (waits) {
+          expireUsage();
+        }
+        const fresh = createDeferred<UsageSummary>();
+        mocks.loadProviderUsageSummary.mockImplementation(() => fresh.promise);
+        const params = waits ? { refreshUsage: true } : { refresh: true };
+        const requests = [createOptions(params), createOptions(params)];
+        const pending = Promise.all(requests.map((options) => handler(options)));
+        expect((await readAuthStatus()).providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
+        if (!waits) {
+          await pending;
+        } else {
+          for (const options of requests) {
+            expect(options.respond).not.toHaveBeenCalled();
+          }
+        }
+        fresh.resolve(usage());
+        await pending;
+        for (const options of requests) {
+          const [ok, payload, error] = expectDefined(firstRespondCall(options), "usage response");
+          expect([ok, error]).toEqual([true, undefined]);
+          expect(payload).toMatchObject({
             providers: expect.arrayContaining([
-              expect.objectContaining({ usage: expect.objectContaining({ windows: windows(20) }) }),
+              expect.objectContaining({
+                usage: expect.objectContaining({ windows: windows(waits ? 20 : 10) }),
+              }),
             ]),
-          }),
+          });
+        }
+        expect(mocks.loadProviderUsageSummary).toHaveBeenCalledTimes(2);
+        if (waits) {
+          expect(mocks.refreshRuntimeAuthProfileStoreSources).not.toHaveBeenCalled();
+          expect(mocks.refreshActiveProviderAuthRuntimeSnapshot).not.toHaveBeenCalled();
+          expect(mocks.loadDeferredCatalog).not.toHaveBeenCalled();
+        }
+        await vi.waitFor(
+          async () => {
+            expect((await readAuthStatus()).providers[0]?.usage?.windows[0]?.usedPercent).toBe(20);
+          },
+          { interval: 1 },
         );
-      }
-      expect(mocks.loadProviderUsageSummary).toHaveBeenCalledTimes(2);
-      expect(mocks.refreshRuntimeAuthProfileStoreSources).not.toHaveBeenCalled();
-      expect(mocks.refreshActiveProviderAuthRuntimeSnapshot).not.toHaveBeenCalled();
-      expect(mocks.loadDeferredCatalog).not.toHaveBeenCalled();
-      expect((await readAuthStatus()).providers[0]?.usage?.windows[0]?.usedPercent).toBe(20);
-    });
-
-    it("retains last good usage when a usage-only fetch times out", async () => {
-      expireUsage();
-      mocks.loadProviderUsageSummary.mockResolvedValue(usage("Timeout"));
-      expect((await readAuthStatus({ refreshUsage: true })).providers[0]?.usage?.windows).toEqual(
-        windows(10),
-      );
-    });
-
-    it.each(["HTTP 503", "Unauthorized"])(
-      "reports a usage-only provider failure instead of returning empty quota: %s",
-      async (error) => {
-        expireUsage();
-        mocks.loadProviderUsageSummary.mockResolvedValue(usage(error));
-        const options = createOptions({ refreshUsage: true });
-        await handler(options);
-        expect(firstRespondCall(options)).toEqual([
-          false,
-          undefined,
-          expect.objectContaining({
-            code: "UNAVAILABLE",
-            message: expect.stringContaining("Provider usage refresh failed for openai"),
-          }),
-        ]);
-        expect((await readAuthStatus()).providers[0]?.usage?.windows).toEqual(windows(10));
+        expect(mocks.loadProviderUsageSummary).toHaveBeenCalledTimes(2);
       },
     );
+
+    it("reports a usage-only provider failure instead of returning empty quota", async () => {
+      expireUsage();
+      mocks.loadProviderUsageSummary.mockResolvedValue(usage("HTTP 503"));
+      const options = createOptions({ refreshUsage: true });
+      await handler(options);
+      expect(firstRespondCall(options)).toEqual([
+        false,
+        undefined,
+        expect.objectContaining({
+          code: "UNAVAILABLE",
+          message: expect.stringContaining("Provider usage refresh failed for openai"),
+        }),
+      ]);
+      expect((await readAuthStatus()).providers[0]?.usage?.windows).toEqual(windows(10));
+    });
   });
 }

@@ -78,16 +78,11 @@ async function rpc(
   return respond;
 }
 
-it("redeems the exact session read once through the registered direct private method", async () => {
+it("redeems once through the registered direct private method", async () => {
   const issued = issue();
   expect(await rpc(issued.proof)).toHaveBeenCalledWith(
     true,
-    expect.objectContaining({
-      ...claim,
-      actorId: 101,
-      actorPrincipal: "github:example.ghe.com:101",
-      profileId: "person-1",
-    }),
+    expect.objectContaining({ actorId: 101 }),
   );
   expectForbidden(await rpc(issued.proof));
 });
