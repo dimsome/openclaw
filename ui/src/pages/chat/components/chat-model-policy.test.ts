@@ -81,9 +81,9 @@ it.each([
     const values = Array.from(container.querySelectorAll("[data-chat-model-option]"), (row) =>
       row.getAttribute("data-chat-model-option"),
     );
-    expect(values.toSorted()).toEqual(
-      ["primary", "fallback", "custom", ...extraModels].map((id) => `fixture/${id}`).toSorted(),
-    );
+    const expected = ["primary", "fallback", "custom", ...extraModels].map((id) => `fixture/${id}`);
+    expect(values).toHaveLength(expected.length);
+    expect(values).toEqual(expect.arrayContaining(expected));
     control("option", "fixture/custom")?.click();
     expect(onModelSelect).toHaveBeenCalledWith("fixture/custom", "main", undefined);
     if (defaultModel !== undefined) {

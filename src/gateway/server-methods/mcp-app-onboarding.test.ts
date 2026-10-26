@@ -42,6 +42,7 @@ it.each(["success", "caller-revoked", "session-replaced", "native-denied"] as co
           rootDir: pluginRoot,
           skills: ["."],
           onboardingSkill: "setup.md",
+          enabledByDefault: true,
         },
       ],
     });

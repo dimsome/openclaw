@@ -60,7 +60,7 @@ export function registerModelAuthStatusUsageRefreshTests({
         mocks.loadProviderUsageSummary.mockImplementation(() => fresh.promise);
         const params = waits ? { refreshUsage: true } : { refresh: true };
         const requests = [createOptions(params), createOptions(params)];
-        const pending = Promise.all(requests.map((options) => handler(options)));
+        const pending = Promise.all(requests.map((options) => Promise.resolve(handler(options))));
         expect((await readAuthStatus()).providers[0]?.usage?.windows[0]?.usedPercent).toBe(10);
         if (!waits) {
           await pending;
