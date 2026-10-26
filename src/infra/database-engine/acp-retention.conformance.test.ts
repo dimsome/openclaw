@@ -8,6 +8,31 @@ import {
 import type { WorkerWriteOperationContext } from "../../state/worker-operation-registry.js";
 import { withEngineStoreAdmission } from "./admission-scope.js";
 import { mixedAgentConnection, useMixedAgentPair } from "./mixed-agent.conformance.test-support.js";
+import { createSqlStatementObserver } from "./sql-statement-observer.test-support.js";
+
+function replayFixture() {
+  const database = openOpenClawStateDatabase();
+  const write: WorkerWriteOperationContext["write"] = (operation) =>
+    runOpenClawStateWriteTransaction(operation, { database });
+  const context: WorkerWriteOperationContext = {
+    open: () => database,
+    stateOptions: () => ({ path: database.path, env: process.env }),
+    write,
+    writeAdmitted: write,
+  };
+  return {
+    db: database.db,
+    write,
+    start: () =>
+      acpReplayOperations["acpReplay.start"](
+        {
+          session: { sessionId: "fresh", sessionKey: "key", cwd: "/work", complete: true },
+          now: 200,
+        },
+        context,
+      ),
+  };
+}
 
 for (const engine of ["sqlite", "postgres"] as const) {
   describe.skipIf(engine === "postgres" && !mixedAgentConnection)(`${engine} ACP retention`, () => {
@@ -17,60 +42,40 @@ for (const engine of ["sqlite", "postgres"] as const) {
       "keeps ordered partial eviction and clamped accounting (understated=%s)",
       (understated) =>
         withEngineStoreAdmission(() => {
-          const database = openOpenClawStateDatabase();
-          const { db } = database;
+          const { db, write, start } = replayFixture();
           const updateJson = JSON.stringify({
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: "x".repeat(64 * 1024) },
           });
           const eventBytes = 34 + Buffer.byteLength(updateJson);
-          runOpenClawStateWriteTransaction(
-            () => {
-              db.prepare("DELETE FROM acp_replay_sessions").run();
-              for (const id of ["a", "b", "c"]) {
-                db.prepare(
-                  "INSERT INTO acp_replay_sessions (session_id, session_key, cwd, complete, created_at, updated_at, next_seq, estimated_bytes) VALUES (?, ?, '', 1, 100, 100, 131, ?)",
-                ).run(id, id, understated && id === "a" ? 1 : 34 + 130 * eventBytes);
-                const insert = db.prepare(
-                  "INSERT INTO acp_replay_events (session_id, seq, at, session_key, run_id, update_json, estimated_bytes) VALUES (?, ?, 100, ?, NULL, ?, ?)",
-                );
-                for (let seq = 1; seq <= 130; seq++) {
-                  insert.run(id, seq, id, updateJson, eventBytes);
-                }
+          write(() => {
+            db.prepare("DELETE FROM acp_replay_sessions").run();
+            for (const id of ["a", "b", "c"]) {
+              db.prepare(
+                "INSERT INTO acp_replay_sessions (session_id, session_key, cwd, complete, created_at, updated_at, next_seq, estimated_bytes) VALUES (?, ?, '', 1, 100, 100, 131, ?)",
+              ).run(id, id, understated && id === "a" ? 1 : 34 + 130 * eventBytes);
+              const insert = db.prepare(
+                "INSERT INTO acp_replay_events (session_id, seq, at, session_key, run_id, update_json, estimated_bytes) VALUES (?, ?, 100, ?, NULL, ?, ?)",
+              );
+              for (let seq = 1; seq <= 130; seq++) {
+                insert.run(id, seq, id, updateJson, eventBytes);
               }
-            },
-            { database },
-          );
-          const context: WorkerWriteOperationContext = {
-            open: () => database,
-            stateOptions: () => ({ path: database.path, env: process.env }),
-            write: (operation) => runOpenClawStateWriteTransaction(operation, { database }),
-            writeAdmitted: (operation) => runOpenClawStateWriteTransaction(operation, { database }),
-          };
+            }
+          });
           let budgetReads = 0;
           const observation = channel("openclaw.database.statement");
-          const observe = (event: unknown) => {
-            if (
-              event &&
-              typeof event === "object" &&
-              "sql" in event &&
-              typeof event.sql === "string" &&
-              /^select /i.test(event.sql) &&
-              /from "acp_replay_sessions"/i.test(event.sql) &&
-              (/sum\(/i.test(event.sql) || /order by "updated_at" asc/i.test(event.sql))
-            ) {
+          const observe = createSqlStatementObserver(
+            (sql) =>
+              /^select /i.test(sql) &&
+              /from "acp_replay_sessions"/i.test(sql) &&
+              (/sum\(/i.test(sql) || /order by "updated_at" asc/i.test(sql)),
+            () => {
               budgetReads++;
-            }
-          };
+            },
+          );
           observation.subscribe(observe);
           try {
-            acpReplayOperations["acpReplay.start"](
-              {
-                session: { sessionId: "fresh", sessionKey: "key", cwd: "/work", complete: true },
-                now: 200,
-              },
-              context,
-            );
+            start();
           } finally {
             observation.unsubscribe(observe);
           }
@@ -100,34 +105,18 @@ for (const engine of ["sqlite", "postgres"] as const) {
 
     it("retains the first 200 sessions by recency and stable ID order", () =>
       withEngineStoreAdmission(() => {
-        const database = openOpenClawStateDatabase();
-        const { db } = database;
-        runOpenClawStateWriteTransaction(
-          () => {
-            db.prepare("DELETE FROM acp_replay_sessions").run();
-            const insert = db.prepare(
-              "INSERT INTO acp_replay_sessions (session_id, session_key, cwd, complete, created_at, updated_at, next_seq, estimated_bytes) VALUES (?, ?, '', 1, 100, 100, 1, 100)",
-            );
-            for (let index = 0; index <= 200; index++) {
-              const id = String(index).padStart(3, "0");
-              insert.run(id, id);
-            }
-          },
-          { database },
-        );
-        const context: WorkerWriteOperationContext = {
-          open: () => database,
-          stateOptions: () => ({ path: database.path, env: process.env }),
-          write: (operation) => runOpenClawStateWriteTransaction(operation, { database }),
-          writeAdmitted: (operation) => runOpenClawStateWriteTransaction(operation, { database }),
-        };
-        acpReplayOperations["acpReplay.start"](
-          {
-            session: { sessionId: "fresh", sessionKey: "key", cwd: "/work", complete: true },
-            now: 200,
-          },
-          context,
-        );
+        const { db, write, start } = replayFixture();
+        write(() => {
+          db.prepare("DELETE FROM acp_replay_sessions").run();
+          const insert = db.prepare(
+            "INSERT INTO acp_replay_sessions (session_id, session_key, cwd, complete, created_at, updated_at, next_seq, estimated_bytes) VALUES (?, ?, '', 1, 100, 100, 1, 100)",
+          );
+          for (let index = 0; index <= 200; index++) {
+            const id = String(index).padStart(3, "0");
+            insert.run(id, id);
+          }
+        });
+        start();
         expect(
           db.prepare("SELECT session_id FROM acp_replay_sessions ORDER BY session_id").all(),
         ).toEqual([

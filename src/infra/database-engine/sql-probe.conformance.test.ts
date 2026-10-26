@@ -42,12 +42,16 @@ describe.each(engines)("%s SQL probe removal", (engine) => {
 
   it.each(["success", "missing", "expired", "malformed"] as const)(
     "consumes a %s join code in two statements and burns it once",
-    (outcome) => {
+    (outcome) =>
       admit(() => {
         const database = openOpenClawStateDatabase();
         const { db } = database;
         const codes = getNodeSqliteKysely<Pick<DB, "device_pairing_join_codes">>(db);
         const shortcode = `synthetic-${outcome}`;
+        const codeRow = codes
+          .selectFrom("device_pairing_join_codes")
+          .select("shortcode")
+          .where("shortcode", "=", shortcode);
         const now = Date.now();
         const expiresAtMs = outcome === "expired" ? now - 1 : now + 600_000;
         const payloadJson =
@@ -81,26 +85,17 @@ describe.each(engines)("%s SQL probe removal", (engine) => {
             ? undefined
             : { payload_json: payloadJson, expires_at_ms: expiresAtMs },
         );
-        expect(
-          executeSqliteQuerySync(
-            db,
-            codes
-              .selectFrom("device_pairing_join_codes")
-              .select("shortcode")
-              .where("shortcode", "=", shortcode),
-          ).rows,
-        ).toEqual([]);
+        expect(executeSqliteQuerySync(db, codeRow).rows).toEqual([]);
         expect(
           transact(() => redeemDevicePairingJoinCodeInWorker(db, { shortcode })),
         ).toBeUndefined();
         expect(measured.statements).toBe(2);
-      });
-    },
+      }),
   );
 
   it.skipIf(engine !== "postgres")(
     "reports capture deletion changes while preserving shared blobs and missing outcomes",
-    () => {
+    () =>
       admit(() => {
         const store = new DebugProxyCaptureStore();
         try {
@@ -146,7 +141,6 @@ describe.each(engines)("%s SQL probe removal", (engine) => {
         } finally {
           store.close();
         }
-      });
-    },
+      }),
   );
 });

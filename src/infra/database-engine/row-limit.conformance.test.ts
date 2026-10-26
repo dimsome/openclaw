@@ -50,25 +50,16 @@ for (const engine of ["sqlite", "postgres"] as const) {
               createdAt: 200,
             });
           });
-          expect(
-            database.db
-              .prepare(
-                "SELECT id FROM session_suggestions WHERE session_key = ? AND state <> 'pending' ORDER BY id",
-              )
-              .all(sessionKey),
-          ).toEqual(
+          const ids = (where: string, ...params: string[]) =>
+            database.db.prepare(`SELECT id FROM session_suggestions WHERE ${where}`).all(...params);
+          expect(ids("session_key = ? AND state <> 'pending' ORDER BY id", sessionKey)).toEqual(
             Array.from({ length: 200 }, (_, index) => ({ id: String(index + 5).padStart(3, "0") })),
           );
-          expect(
-            database.db
-              .prepare("SELECT id FROM session_suggestions WHERE state = 'pending' ORDER BY id")
-              .all(),
-          ).toEqual([{ id: "fresh" }, { id: "pending" }]);
-          expect(
-            database.db
-              .prepare("SELECT id FROM session_suggestions WHERE session_key = ?")
-              .all(otherKey),
-          ).toEqual([{ id: "other" }]);
+          expect(ids("state = 'pending' ORDER BY id")).toEqual([
+            { id: "fresh" },
+            { id: "pending" },
+          ]);
+          expect(ids("session_key = ?", otherKey)).toEqual([{ id: "other" }]);
         }));
 
       it.each(["pending", "completed", "failed"] as const)(
@@ -77,45 +68,37 @@ for (const engine of ["sqlite", "postgres"] as const) {
           withEngineStoreAdmission(() => {
             const database = openOpenClawStateDatabase();
             const query = getNodeSqliteKysely<Pick<DB, "channel_ingress_events">>(database.db);
+            const write = <T>(operation: () => T) =>
+              runOpenClawStateWriteTransaction(operation, { database });
             const queueName = `limit-${state}`;
             const protectedIds = Array.from({ length: 500 }, (_, i) =>
               String(i + 18).padStart(4, "0"),
             );
-            runOpenClawStateWriteTransaction(
-              () => {
-                executeSqliteQuerySync(
-                  database.db,
-                  query.insertInto("channel_ingress_events").values(
-                    Array.from({ length: 520 }, (_, index) => ({
-                      queue_name: queueName,
-                      event_id: String(index).padStart(4, "0"),
-                      channel_id: "synthetic",
-                      account_id: "account",
-                      status: state,
-                      payload_json: "null",
-                      received_at: 100,
-                      updated_at: 100,
-                    })),
-                  ),
-                );
-              },
-              { database },
-            );
-            const maxOption =
-              state === "pending"
-                ? "pendingMaxEntries"
-                : state === "completed"
-                  ? "completedMaxEntries"
-                  : "failedMaxEntries";
+            write(() => {
+              executeSqliteQuerySync(
+                database.db,
+                query.insertInto("channel_ingress_events").values(
+                  Array.from({ length: 520 }, (_, index) => ({
+                    queue_name: queueName,
+                    event_id: String(index).padStart(4, "0"),
+                    channel_id: "synthetic",
+                    account_id: "account",
+                    status: state,
+                    payload_json: "null",
+                    received_at: 100,
+                    updated_at: 100,
+                  })),
+                ),
+              );
+            });
+            const maxOption = `${state}MaxEntries` as const;
             const prune = (max: number, protectIds: string[]) =>
-              runOpenClawStateWriteTransaction(
-                () =>
-                  pruneChannelIngressInDatabase(database.db, {
-                    queueName,
-                    options: { [maxOption]: max, protectIds },
-                    now: 200,
-                  }),
-                { database },
+              write(() =>
+                pruneChannelIngressInDatabase(database.db, {
+                  queueName,
+                  options: { [maxOption]: max, protectIds },
+                  now: 200,
+                }),
               );
             const remaining = () =>
               executeSqliteQuerySync(
