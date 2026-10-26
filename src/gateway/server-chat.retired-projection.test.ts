@@ -7,13 +7,8 @@ import {
   withAgentRunLifecycleGeneration,
 } from "../infra/agent-events.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../infra/agent-run-registry.js";
+import { createAgentEventTestHarness } from "./server-chat.agent-events.test-harness.js";
 import { subscribeAgentEvents } from "./server-chat.agent-events.test-helpers.js";
-import {
-  createAgentEventHandler,
-  createChatRunState,
-  createSessionEventSubscriberRegistry,
-  createSessionMessageSubscriberRegistry,
-} from "./server-chat.js";
 import { createSessionRowProjectionFixture } from "./session-row-projection.test-support.js";
 
 const sessionFixture = vi.hoisted(() => ({ updatedAt: 50 }));
@@ -33,12 +28,6 @@ async function withReceiver(
   context: Parameters<typeof registerAgentRunContext>[1],
   toolCallId = "finished",
 ) {
-  const broadcast = vi.fn();
-  const broadcastToConnIds = vi.fn();
-  const nodeSendToSession = vi.fn();
-  const chatRunState = createChatRunState();
-  const sessionMessageSubscribers = createSessionMessageSubscriberRegistry();
-  sessionMessageSubscribers.subscribe("selected", "agent:delivery:late");
   const entry = {
     sessionId: "session",
     verboseLevel: "off" as const,
@@ -49,25 +38,15 @@ async function withReceiver(
     agentId: "delivery",
     store: { global: entry, "agent:delivery:late": entry },
   });
-  const handler = createAgentEventHandler({
-    broadcast,
-    broadcastToConnIds,
-    nodeHasSessionSubscribers: () => true,
-    nodeSendToSession,
-    chatRunState,
-    agentRunSeq: new Map(),
-    toolEventRecipients: chatRunState.toolEventRecipients,
-    sessionMessageSubscribers,
-    sessionEventSubscribers: createSessionEventSubscriberRegistry(),
-    clearAgentRunContext,
+  const h = createAgentEventTestHarness({
     resolveSessionKeyForRun: () => {
       throw new Error("Event lost its producer route");
     },
-    loadGatewaySessionLifecycleSnapshotForEvent: () => ({ row: null }),
-    persistGatewaySessionLifecycleEventForEvent: async () => {},
     getSessionRowProjection: () => projection,
   });
-  const unsubscribe = subscribeAgentEvents(handler);
+  h.clearAgentRunContext.mockImplementation(clearAgentRunContext);
+  h.sessionMessageSubscribers.subscribe("selected", "agent:delivery:late");
+  const unsubscribe = subscribeAgentEvents(h.handler);
   try {
     withAgentRunLifecycleGeneration(getAgentEventLifecycleGeneration(), () => {
       registerAgentRunContext(runId, {
@@ -87,11 +66,11 @@ async function withReceiver(
     try {
       await unsubscribe();
     } finally {
-      await handler.dispose();
+      await h.handler.dispose();
       projection.dispose();
     }
   }
-  return { broadcast, broadcastToConnIds, nodeSendToSession };
+  return h;
 }
 
 it("preserves tool results for hidden session subscribers after cleanup", async () => {

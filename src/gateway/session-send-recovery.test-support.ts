@@ -8,11 +8,7 @@ import type { SessionSendDelivery } from "./session-send-delivery.js";
 import { SessionStoreUnavailableError } from "./session-utils-store-error.js";
 
 export const terminalRecoveryFailures = [
-  new GatewayClientRequestError({
-    code: "UNAVAILABLE",
-    message: "Admission denied",
-    retryable: false,
-  }),
+  new GatewayClientRequestError({ code: "UNAVAILABLE", message: "denied", retryable: false }),
   new SqliteWorkerError("Native outcome is unknown", "outcome-unknown"),
   new SessionStoreUnavailableError("main", "read-failed", {
     name: "SqliteError",
