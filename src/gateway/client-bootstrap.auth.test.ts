@@ -91,20 +91,18 @@ it("reports an unresolved remote token ref instead of substituting ambient auth"
 });
 
 it.each([
-  { source: "CLI", gatewayUrl: overrideUrl, env: shellToken, token: undefined },
-  {
-    source: "environment",
-    env: { OPENCLAW_GATEWAY_URL: overrideUrl, ...shellToken },
-    token: "shell-token-value",
-  },
-  {
-    source: "explicit credentials",
-    gatewayUrl: overrideUrl,
-    env: shellToken,
-    explicitAuth: { token: "caller-auth-value" },
-    token: "caller-auth-value",
-  },
-])("limits URL override credentials to $source", async ({ source: _source, token, ...params }) => {
+  ["CLI", { gatewayUrl: overrideUrl, env: shellToken }, undefined],
+  [
+    "environment",
+    { env: { OPENCLAW_GATEWAY_URL: overrideUrl, ...shellToken } },
+    "shell-token-value",
+  ],
+  [
+    "explicit credentials",
+    { gatewayUrl: overrideUrl, env: shellToken, explicitAuth: { token: "caller-auth-value" } },
+    "caller-auth-value",
+  ],
+] as const)("limits URL override credentials to %s", async (_source, params, token) => {
   const result = interactive({ config: localConfig, ...params });
   if (token === undefined) {
     await expect(result).rejects.toThrow("gateway url override requires explicit credentials");
@@ -115,28 +113,22 @@ it.each([
 
 it("allows stored auth only for the exact normalized URL origin", async () => {
   const seenScopes: string[] = [];
-  await expect(
+  const bootstrap = (gatewayUrl: string) =>
     interactive({
       config: { gateway: { mode: "local" } },
-      gatewayUrl: "wss://override.example/rpc/?ignored=1",
+      gatewayUrl,
       allowStoredOriginAuth: async (scope) => {
         seenScopes.push(scope);
         return scope === "wss://override.example/rpc";
       },
       overrideAuthErrorHint: "Fix: pair this origin.",
-    }),
-  ).resolves.toMatchObject({
+    });
+  await expect(bootstrap("wss://override.example/rpc/?ignored=1")).resolves.toMatchObject({
     deviceAuthScope: "wss://override.example/rpc",
     auth: { token: undefined, password: undefined },
   });
   expect(seenScopes).toEqual(["wss://override.example/rpc"]);
-
-  await expect(
-    interactive({
-      config: { gateway: { mode: "local" } },
-      gatewayUrl: "wss://other.example/rpc",
-      allowStoredOriginAuth: async (scope) => scope === "wss://override.example/rpc",
-      overrideAuthErrorHint: "Fix: pair this origin.",
-    }),
-  ).rejects.toThrow("gateway url override requires explicit credentials");
+  await expect(bootstrap("wss://other.example/rpc")).rejects.toThrow(
+    "gateway url override requires explicit credentials",
+  );
 });
