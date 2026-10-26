@@ -109,6 +109,24 @@ it.each([
   expect(downloads()).toEqual([[url, `${kind}-widget.html`]]);
 });
 
+it("starts clipboard writing before the snapshot resolves", async () => {
+  const blob = new Blob(["image"], { type: "image/png" });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ blob: async () => blob }));
+  class ClipboardItemStub {
+    constructor(readonly data: Record<string, Promise<Blob>>) {}
+  }
+  vi.stubGlobal("ClipboardItem", ClipboardItemStub);
+  const write = vi.fn(async (items: { data: Record<string, Promise<Blob>> }[]) => {
+    await expect(items[0]?.data["image/png"]).resolves.toBe(blob);
+  });
+  vi.stubGlobal("navigator", { clipboard: { write } });
+
+  const { reply, result } = snapshot("Current widget", "copy");
+  expect(write).toHaveBeenCalledOnce();
+  reply();
+  await expect(result).resolves.toBe("png");
+});
+
 it.each([
   ["bridge error", { error: "canvas is not exportable" }],
   ["JPEG", { dataUrl: "data:image/jpeg;base64,aW1hZ2U=" }],

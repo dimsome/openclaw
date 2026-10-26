@@ -29,8 +29,8 @@ type PolicyInput = Omit<
   Parameters<typeof buildAccountScopedDmSecurityPolicy>[0],
   "cfg" | "channelKey"
 >;
-const allowlist = { policy: "allowlist", allowFrom: ["+15550001111"] };
-const pairing = { policy: "pairing", allowFrom: ["*"] };
+const allowlist = { policy: "allowlist", allowFrom: ["+15550001111"] } satisfies PolicyInput;
+const pairing = { policy: "pairing", allowFrom: ["*"] } satisfies PolicyInput;
 const accounts = { default: { dmPolicy: "allowlist", allowFrom: ["+15550001111"] }, work: {} };
 function expected(policy: string, allowFrom: string[], scope = "", suffix = "") {
   return {

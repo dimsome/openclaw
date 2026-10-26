@@ -54,7 +54,7 @@ describe("sandbox backend registry", () => {
     });
     const invoke = getSandboxBackendFactory("reserved-authority")!;
     const params = paramsFor();
-    const assertRuntimeCurrent = () => {};
+    const assertRuntimeCurrent = vi.fn(() => {});
     for (const incomplete of [
       params,
       { ...params, runtimeId: "reserved-runtime" },
@@ -75,6 +75,8 @@ describe("sandbox backend registry", () => {
     await expect(
       invoke({ ...params, runtimeId: "reserved-runtime", assertRuntimeCurrent }),
     ).rejects.toThrow("provider factory reached");
+    expect(assertRuntimeCurrent).toHaveBeenCalledOnce();
+    expect(factory).toHaveBeenCalledOnce();
   });
 
   it("advertises read-only resource projection only for supporting backends", () => {

@@ -30,7 +30,7 @@ function createConfig(options?: { accountId?: string; route?: boolean }): OpenCl
     bindings: [
       {
         ...route,
-        ...(!options?.route ? { type: "acp", acp: { backend: "acpx" } } : {}),
+        ...(!options?.route ? { type: binding.type, acp: { backend: "acpx" } } : {}),
         match: { ...binding.match, accountId: options?.accountId ?? "default" },
       },
     ],
