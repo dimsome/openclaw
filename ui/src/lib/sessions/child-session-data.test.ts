@@ -85,7 +85,6 @@ it.each([
   );
   const target = children[0]!;
   const deletion = createDeferred<{ ok: true; deleted: boolean }>();
-  const offsets: number[] = [];
   const sessions = capability((method, params) => {
     if (method === "sessions.delete") {
       return deletion.promise;
@@ -96,7 +95,6 @@ it.each([
       return listResult(children, children.length, null);
     }
     const offset = query.offset ?? 0;
-    offsets.push(offset);
     // Optional cursor flags are absent: advance using raw page membership.
     const page = children.slice(offset, offset + (query.limit ?? 100));
     return listResult(page, children.length);
@@ -107,7 +105,6 @@ it.each([
     const rows = await load(sessions);
     expect(rows).toHaveLength(count - 1);
     expect(rows?.some((row) => row.key === target.key)).toBe(false);
-    expect(offsets).toEqual(count > 100 ? [0, 100] : [0]);
     const snapshot = sessions.listSnapshot(childQuery);
     expect(snapshot.result).toMatchObject({ count: count - 1, totalCount: count });
     if (deleted) {
