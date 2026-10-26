@@ -17,21 +17,19 @@ const fixture = useExecutorFixture("native-inspection-", { splitRoots: true });
 const command = { programArguments: ["node", "gateway"] };
 const runtime = { status: "stopped" as const, managerUid: 1001 };
 
-it
-  .skipIf(process.platform === "win32")
-  .each([
-    "command-present",
-    "command-absent",
-    "requester-revoked",
-    "fence-reassigned",
-    "A-revoked",
-    "B-revoked",
-    "cleanup-uncertain",
-  ] as const)(
-  "joins native inspection before parent reads and preserves authority: %s",
-  async (change) => {
+it.skipIf(process.platform === "win32").each([
+  ["command-present", null],
+  ["command-absent", null],
+  ["requester-revoked", "requester revoked"],
+  ["fence-reassigned", "Retained service lost its original executor."],
+  ["A-revoked", "Update failed and executor release remains pending"],
+  ["B-revoked", "Update failed and executor release remains pending"],
+  ["cleanup-uncertain", "Command cleanup could not confirm that owned work stopped"],
+] as const)(
+  "joins native inspection before parent reads: %s",
+  async (change, failure) => {
     const { root, serviceRoot, control } = fixture();
-    const healthy = change === "command-present" || change === "command-absent";
+    const healthy = failure === null;
     const runCommand = processRunner.runCommandWithTimeout;
     const bound = createDeferredCore();
     const runId = randomUUID();
@@ -121,15 +119,7 @@ it
     if (healthy) {
       await work;
     } else {
-      const reason =
-        change === "requester-revoked"
-          ? "requester revoked"
-          : change === "fence-reassigned"
-            ? "Retained service lost its original executor."
-            : change === "cleanup-uncertain"
-              ? "Command cleanup could not confirm that owned work stopped"
-              : "Update failed and executor release remains pending";
-      await expect(work).rejects.toThrow(reason);
+      await expect(work).rejects.toThrow(failure);
       expect(parentReads).toBe(0);
     }
     expect(nativeReads).toBe(change === "command-absent" ? 2 : 1);

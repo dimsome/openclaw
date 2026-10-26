@@ -3393,8 +3393,6 @@
 ["src/cli/update-cli/update-command-service-plan.test.ts","../../infra/container-environment.js","9c5553ee82a0fcaca0126b76e74628b8d16a5ff69c839c76fefc1187f7c38bac",1]
 ["src/cli/update-cli/update-command-service-plan.test.ts","../../infra/package-update-activation-paths.js","ca28b9c7fe33aca3c5e6a71900b5c538859a84e02a26544298d0da52b99107e7",1]
 ["src/cli/update-cli/update-command-service-plan.test.ts","./update-command-node-runtime-resolution.js","b8b3e1b80de273326cf42d5ee5a60ee475cb7a993b49685e2513ed93074ca623",1]
-["src/cli/update-cli/update-command-service-root-plan.test.ts","../../daemon/runtime-paths.js","5300dc0d33543605b43270dc115ae2cc403538d84b5041be79d9665bc0bdd4a6",1]
-["src/cli/update-cli/update-command-service-root-plan.test.ts","../../infra/gateway-supervision.js","ef429066546117c12226369086916d60728007360277fda4dfcf57c239228f34",1]
 ["src/cli/update-cli/update-command-service.integration.test.ts","../../commands/doctor.js","5a16284006c1734b0345fc2d633862d68c5e5094047970e30646ea48bab1f310",1]
 ["src/cli/update-cli/update-command-service.integration.test.ts","../../infra/ports-inspect.js","9b04fa3c9a26c6e40ad294c9280e9816b91caedc5dcc8a487df3059973e1a0f9",1]
 ["src/cli/update-cli/update-command-service.integration.test.ts","../daemon-cli/lifecycle-audit.js","d9c3554140178a22afdb29b5241ac7bbaf367e693517ab5e0522033889d96850",1]
