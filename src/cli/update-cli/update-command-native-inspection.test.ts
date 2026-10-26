@@ -71,15 +71,11 @@ it
           run.executorFence = { assertCurrent() {} };
         }
         if (change === "A-revoked" || change === "B-revoked") {
-          const db = new DatabaseSync(path.join(control, "managed-update-handoffs.sqlite"));
-          try {
-            const changed = db
-              .prepare("UPDATE managed_update_handoffs SET owner = ? WHERE install_root = ?")
-              .run("replacement", change === "A-revoked" ? serviceRoot : root);
-            expect(changed.changes).toBe(1);
-          } finally {
-            db.close();
-          }
+          using db = new DatabaseSync(path.join(control, "managed-update-handoffs.sqlite"));
+          const changed = db
+            .prepare("UPDATE managed_update_handoffs SET owner = ? WHERE install_root = ?")
+            .run("replacement", change === "A-revoked" ? serviceRoot : root);
+          expect(changed.changes).toBe(1);
         }
         // The native child settled; only the negative cleanup classification is injected.
         return change === "cleanup-uncertain" ? { ...result, cleanup: "uncertain" } : result;
