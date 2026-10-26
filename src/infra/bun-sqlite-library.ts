@@ -6,8 +6,8 @@ import { resolveStandaloneSidecarRoot } from "../../cli-invocation.mjs";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import type { probeSqliteNativeClose } from "./bun-sqlite-close-probe.js";
 import { probeBunSqliteLibrary } from "./bun-sqlite-library-probe.js";
+import { PROCESS_MACHINE_IDENTITY_KEY } from "./current-machine-identity.js";
 import { parseDiagnosticEnvFlags } from "./diagnostic-flags-env.js";
-import { PROCESS_MACHINE_IDENTITY_KEY } from "./process-machine-identity.js";
 import { SQLITE_DATABASE_ADMISSIONS_KEY } from "./sqlite-database-admission-key.js";
 import { isSqliteWalResetSafeVersion } from "./sqlite-runtime-version.js";
 

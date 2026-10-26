@@ -21,6 +21,7 @@ import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths
 import * as leaseHeartbeat from "../state/openclaw-state-lease-heartbeat.js";
 import { renewOpenClawStateLeaseInTransaction } from "../state/openclaw-state-lease-store.js";
 import { createOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import * as machineIdentity from "./current-machine-identity.js";
 import { mockLinuxNamespace } from "./gateway-lock-namespace.test-support.js";
 import {
   GATEWAY_OWNER_HEARTBEAT_STALE_MS,
@@ -37,7 +38,6 @@ import * as ownerLeaseRead from "./gateway-owner-lease.read.js";
 import * as stateOwners from "./gateway-state-owner.js";
 import { acquireGatewayStateOwner, tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
-import * as machineIdentity from "./process-machine-identity.js";
 import { writeGatewayServiceRestartIntentSync } from "./restart-intent.js";
 import {
   readSqliteDatabaseCleanClose,

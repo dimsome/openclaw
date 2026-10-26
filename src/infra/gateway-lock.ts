@@ -19,6 +19,7 @@ import { ensureOpenClawStatePermissions } from "../state/openclaw-state-db-permi
 import { acquireWithWait } from "./acquire-with-wait.js";
 import { resolveIdentityPathViaExistingAncestorSync } from "./boundary-path.js";
 import { sha256HexPrefixCore } from "./crypto-digest.js";
+import { readProcessMachineIdentity } from "./current-machine-identity.js";
 import {
   assertDatabasePortRecoveryAllowed,
   assertDatabasePortStartupAllowed,
@@ -58,7 +59,6 @@ import {
   resolveGatewayStateOwnerPath,
   tryBorrowGatewayStateOwner,
 } from "./gateway-state-owner.js";
-import { readProcessMachineIdentity } from "./process-machine-identity.js";
 
 export type GatewayLockHandle = {
   lockPath: string;

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { z } from "zod";
 import { safeParseJsonWithSchema } from "../utils/zod-parse.js";
-import { readProcessMachineIdentity } from "./process-machine-identity.js";
+import { readProcessMachineIdentity } from "./current-machine-identity.js";
 import { isLockOwnerDefinitelyStale } from "./stale-lock-file.js";
 import { createManagedHandoffBootIdentityReader } from "./update-managed-service-handoff-boot.js";
 import { managedHandoffBootSchema } from "./update-managed-service-handoff-schema.js";

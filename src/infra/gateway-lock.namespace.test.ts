@@ -10,6 +10,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { acquireDoctorGatewayMaintenanceOwner } from "../commands/doctor-maintenance-foreground.js";
 import { resolveStateDir } from "../config/paths.js";
 import * as processIdentity from "../shared/pid-alive.js";
+import * as machineIdentity from "./current-machine-identity.js";
 import { mockLinuxNamespace } from "./gateway-lock-namespace.test-support.js";
 import {
   GATEWAY_OWNER_HEARTBEAT_STALE_MS,
@@ -31,7 +32,6 @@ import {
   GatewayStateOwnerContentionError,
   resolveGatewayStateOwnerPath,
 } from "./gateway-state-owner.js";
-import * as machineIdentity from "./process-machine-identity.js";
 import * as bootReader from "./update-managed-service-handoff-boot.js";
 
 // SQLite preload imports the machine owner before this file installs its native probe mock.

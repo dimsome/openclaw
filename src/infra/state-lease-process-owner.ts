@@ -3,13 +3,13 @@ import { hostname } from "node:os";
 import { safeParseJsonRecord } from "@openclaw/normalization-core/json-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { getFileLockProcessStartTime, isPidDefinitelyDead } from "../shared/pid-alive.js";
+import { readProcessMachineIdentity } from "./current-machine-identity.js";
 import {
   classifyGatewayOwnerProcessNamespace,
   GatewayProcessNamespaceSchema,
   MachineIdentitySchema,
   type LockPayload,
 } from "./gateway-lock-payload.js";
-import { readProcessMachineIdentity } from "./process-machine-identity.js";
 import { createManagedHandoffBootIdentityReader } from "./update-managed-service-handoff-boot.js";
 import { managedHandoffBootSchema } from "./update-managed-service-handoff-schema.js";
 

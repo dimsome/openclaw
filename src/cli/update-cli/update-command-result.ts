@@ -443,24 +443,24 @@ export async function withUpdateAdmissionReporting<T>(
     const ownershipFailure = !hasCommandProcessCleanupError(error)
       ? resolveUpdateOwnershipFailure(error)
       : undefined;
-    let message: string;
-    let nextAction: string;
-    if (ownershipFailure) {
-      ({ message, nextAction } = ownershipFailure);
-    } else if (
-      error instanceof SystemPackageOwnershipError ||
-      (error instanceof UpdatePreMutationError &&
-        (error.reason === "config-read-failed" || error.reason === "invalid-config"))
+    if (
+      !(error instanceof GatewayServiceUpdateOwnershipError) &&
+      !(error instanceof SystemPackageOwnershipError) &&
+      !(
+        error instanceof UpdatePreMutationError &&
+        (error.reason === "config-read-failed" || error.reason === "invalid-config")
+      ) &&
+      !ownershipFailure
     ) {
-      message = error.message;
-      nextAction =
-        error instanceof UpdatePreMutationError ? (error.nextAction ?? message) : message;
-    } else if (error instanceof GatewayServiceUpdateOwnershipError) {
-      message = `${error.message} Run \`openclaw gateway status --deep\` from the service's owning account before retrying.`;
-      nextAction = message;
-    } else {
       throw error;
     }
+    const message =
+      ownershipFailure?.message ??
+      (error instanceof SystemPackageOwnershipError || error instanceof UpdatePreMutationError
+        ? error.message
+        : error instanceof GatewayServiceUpdateOwnershipError
+          ? `${error.message} Run \`openclaw gateway status --deep\` from the service's owning account before retrying.`
+          : undefined);
     if (opts.json) {
       defaultRuntime.error(message);
     }
@@ -474,7 +474,9 @@ export async function withUpdateAdmissionReporting<T>(
       opts,
       {
         readHistory: false,
-        nextAction,
+        nextAction:
+          ownershipFailure?.nextAction ??
+          (error instanceof UpdatePreMutationError ? (error.nextAction ?? message) : message),
       },
     );
     return exitCliAfterOutput(defaultRuntime, 1);

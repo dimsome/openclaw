@@ -7,6 +7,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { getCliParentPid } from "../../cli-parent-lifetime.mjs";
 import { getFileLockProcessStartTime, isPidAlive } from "../shared/pid-alive.js";
 import { resolveOpenClawStateDirForDatabasePath } from "../state/openclaw-state-db.paths.js";
+import { readProcessMachineIdentity } from "./current-machine-identity.js";
 import {
   classifyGatewayLockProcessNamespace,
   GatewayLockNamespaceError,
@@ -19,7 +20,6 @@ import {
   StateDatabaseAdmissionPendingError,
   StateDatabaseOfflineMaintenanceError,
 } from "./gateway-state-owner-errors.js";
-import { readProcessMachineIdentity } from "./process-machine-identity.js";
 import { isLockOwnerDefinitelyStale } from "./stale-lock-file.js";
 
 function isComparableStateOwnerStale(

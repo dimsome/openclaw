@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { getEnvironmentData } from "node:worker_threads";
+import { getEnvironmentData, setEnvironmentData } from "node:worker_threads";
 import pg from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
 import { stateEngineSchema } from "../state/openclaw-state-db-engine.js";
+import { PROCESS_MACHINE_IDENTITY_KEY } from "./current-machine-identity.js";
 import { withDatabaseEngineSelection } from "./database-engine/context.js";
 import { resolveDatabaseFamilyEngines } from "./database-engine/registry.js";
 import { readGatewayLockProcessNamespace } from "./gateway-lock-payload.js";
@@ -14,27 +15,35 @@ import { inspectGatewayLockRecovery, recoverGatewayLock } from "./gateway-lock-r
 import { acquireGatewayLock } from "./gateway-lock.js";
 import { decodeGatewayOwnerLease } from "./gateway-owner-lease.read.js";
 import { openNodeSqliteDatabase } from "./node-sqlite.js";
-import * as machineIdentity from "./process-machine-identity.js";
 
 const configured: unknown = getEnvironmentData("openclaw.test.state.conformance.connection");
 const connection = typeof configured === "string" ? configured : undefined;
 const directories = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => {
   vi.unstubAllEnvs();
-  vi.restoreAllMocks();
 });
 
 describe.skipIf(!connection)("confirmed PostgreSQL Gateway owner recovery", () => {
   const client = new pg.Client({ connectionString: connection });
   const namespaces: string[] = [];
   const quote = pg.escapeIdentifier;
-  beforeAll(() => client.connect());
+  let previousMachineIdentity: unknown;
+  beforeAll(() => {
+    previousMachineIdentity = getEnvironmentData(PROCESS_MACHINE_IDENTITY_KEY);
+    // Native workers inherit the same synthetic machine fact as the maintenance owner.
+    setEnvironmentData(PROCESS_MACHINE_IDENTITY_KEY, {
+      platform: process.platform,
+      value: "a".repeat(64),
+    });
+    return client.connect();
+  });
   afterAll(async () => {
     try {
       for (const namespace of namespaces) {
         await client.query(`DROP SCHEMA ${quote(namespace)} CASCADE`);
       }
     } finally {
+      setEnvironmentData(PROCESS_MACHINE_IDENTITY_KEY, previousMachineIdentity);
       await client.end();
     }
   });
@@ -109,7 +118,6 @@ describe.skipIf(!connection)("confirmed PostgreSQL Gateway owner recovery", () =
   ] as const)(
     "recovers the exact owner after reboot with $machine machine evidence",
     async (row) => {
-      vi.spyOn(machineIdentity, "readProcessMachineIdentity").mockReturnValue("a".repeat(64));
       const h = await fixture();
       const current = readGatewayLockProcessNamespace();
       if (!current || (current.platform !== "linux" && current.platform !== "darwin")) {
