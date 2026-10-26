@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "./registry-empty.js";
 import { withPluginRuntimeGenerationRegistryScope } from "./runtime/generation-state.js";
 
@@ -10,9 +10,7 @@ type Snapshot = {
 };
 const loadSnapshot = vi.hoisted(() => vi.fn<() => Snapshot>());
 
-vi.mock("./runtime-state.js", () => ({
-  getPluginRegistryState,
-}));
+vi.mock("./runtime-state.js", () => ({ getPluginRegistryState }));
 
 // mock-isolation: supply registry snapshots without loading installed plugins.
 vi.mock("./plugin-registry.js", () => ({
@@ -37,46 +35,38 @@ function authProvider(id: string) {
   };
 }
 
-function setSnapshot(
-  source: "persisted" | "derived",
-  plugins: Array<{ syntheticAuthRefs: string[] }> = [],
-) {
-  loadSnapshot.mockReturnValue({
-    source,
-    snapshot: { plugins },
-    diagnostics: [],
-  });
+function setSnapshot(source: Snapshot["source"], plugins: Snapshot["snapshot"]["plugins"] = []) {
+  loadSnapshot.mockReturnValue({ source, snapshot: { plugins }, diagnostics: [] });
 }
 
-function expectRuntimeRefs(refs: string[], complete = true) {
-  expect(resolveRuntimeSyntheticAuthProviderRefs()).toStrictEqual(refs);
-  expect(resolveRuntimeSyntheticAuthProviderRefState()).toStrictEqual({ refs, complete });
-}
+it("keeps captured generation auth separate from the ambient registry", () => {
+  const ambient = createEmptyPluginRegistry();
+  ambient.providers.push(authProvider("ambient"));
+  getPluginRegistryState.mockReturnValue({ activeRegistry: ambient });
+  const captured = createEmptyPluginRegistry();
+  expect(
+    withPluginRuntimeGenerationRegistryScope(captured, resolveRuntimeSyntheticAuthProviderRefs),
+  ).toEqual([]);
+  captured.providers.push(authProvider("captured"));
+  expect(
+    withPluginRuntimeGenerationRegistryScope(captured, resolveRuntimeSyntheticAuthProviderRefs),
+  ).toEqual(["captured-auth"]);
+  expect(resolveRuntimeSyntheticAuthProviderRefs()).toEqual(["ambient-auth"]);
+});
 
-describe("synthetic auth runtime refs", () => {
-  it("keeps captured generation auth separate from the ambient registry", () => {
-    const ambient = createEmptyPluginRegistry();
-    ambient.providers.push(authProvider("ambient"));
-    getPluginRegistryState.mockReturnValue({ activeRegistry: ambient });
-    const captured = createEmptyPluginRegistry();
-    expect(
-      withPluginRuntimeGenerationRegistryScope(captured, resolveRuntimeSyntheticAuthProviderRefs),
-    ).toEqual([]);
-    captured.providers.push(authProvider("captured"));
-    expect(
-      withPluginRuntimeGenerationRegistryScope(captured, resolveRuntimeSyntheticAuthProviderRefs),
-    ).toEqual(["captured-auth"]);
-    expect(resolveRuntimeSyntheticAuthProviderRefs()).toEqual(["ambient-auth"]);
-  });
+beforeEach(() => {
+  getPluginRegistryState.mockReset();
+  loadSnapshot.mockReset();
+  setSnapshot("persisted", []);
+});
 
-  beforeEach(() => {
-    getPluginRegistryState.mockReset();
-    loadSnapshot.mockReset();
-    setSnapshot("persisted", []);
-  });
-
-  it("normalizes persisted refs using the current runtime scope before a registry exists", () => {
-    setSnapshot("persisted", [
+it.each([
+  ["persisted", ["local-provider", "local-cli", "remote-provider"], true],
+  ["derived", [], false],
+] as const)(
+  "resolves %s metadata using the current scope without deriving a registry",
+  (source, refs, complete) => {
+    setSnapshot(source, [
       { syntheticAuthRefs: [" local-provider ", "local-provider", "local-cli"] },
       { syntheticAuthRefs: ["remote-provider"] },
       { syntheticAuthRefs: [] },
@@ -87,43 +77,38 @@ describe("synthetic auth runtime refs", () => {
       workspaceDir: "/tmp/workspace",
       env: { OPENCLAW_HOME: "/tmp/openclaw-home" },
     };
-    const refs = ["local-provider", "local-cli", "remote-provider"];
-    expect(resolveRuntimeSyntheticAuthProviderRefs(params)).toEqual(refs);
-    expect(resolveRuntimeSyntheticAuthProviderRefState(params)).toEqual({ refs, complete: true });
+    expect(resolveRuntimeSyntheticAuthProviderRefState(params)).toEqual({ refs, complete });
     expect(loadSnapshot).toHaveBeenCalledWith(params);
+  },
+);
+
+it("does not treat a provided index with registry diagnostics as validated synthetic auth", () => {
+  expect(
+    resolveRuntimeSyntheticAuthProviderRefs({
+      index: { plugins: [{ syntheticAuthRefs: ["local-provider"] }] } as unknown as NonNullable<
+        Parameters<typeof resolveRuntimeSyntheticAuthProviderRefs>[0]
+      >["index"],
+      registryDiagnostics: [{ code: "persisted-registry-missing" }],
+    }),
+  ).toStrictEqual([]);
+  expect(loadSnapshot).not.toHaveBeenCalled();
+});
+
+it("prefers the active runtime registry when plugins are already loaded", () => {
+  getPluginRegistryState.mockReturnValue({
+    activeRegistry: {
+      providers: [
+        { provider: { id: "runtime-provider", resolveSyntheticAuth: () => undefined } },
+        { provider: { id: "plain-provider" } },
+      ],
+      cliBackends: [{ backend: { id: "runtime-cli", resolveSyntheticAuth: () => undefined } }],
+      plugins: [{ syntheticAuthRefs: ["manifest-provider"] }],
+    },
   });
 
-  it("does not derive the registry just to resolve synthetic auth refs", () => {
-    setSnapshot("derived", [{ syntheticAuthRefs: ["unvalidated"] }]);
-    expectRuntimeRefs([], false);
-    expect(loadSnapshot).toHaveBeenCalledWith({});
+  expect(resolveRuntimeSyntheticAuthProviderRefState()).toEqual({
+    refs: ["manifest-provider", "runtime-provider", "runtime-cli"],
+    complete: true,
   });
-
-  it("does not treat a provided index with registry diagnostics as validated synthetic auth", () => {
-    expect(
-      resolveRuntimeSyntheticAuthProviderRefs({
-        index: { plugins: [{ syntheticAuthRefs: ["local-provider"] }] } as unknown as NonNullable<
-          Parameters<typeof resolveRuntimeSyntheticAuthProviderRefs>[0]
-        >["index"],
-        registryDiagnostics: [{ code: "persisted-registry-missing" }],
-      }),
-    ).toStrictEqual([]);
-    expect(loadSnapshot).not.toHaveBeenCalled();
-  });
-
-  it("prefers the active runtime registry when plugins are already loaded", () => {
-    getPluginRegistryState.mockReturnValue({
-      activeRegistry: {
-        providers: [
-          { provider: { id: "runtime-provider", resolveSyntheticAuth: () => undefined } },
-          { provider: { id: "plain-provider" } },
-        ],
-        cliBackends: [{ backend: { id: "runtime-cli", resolveSyntheticAuth: () => undefined } }],
-        plugins: [{ syntheticAuthRefs: ["manifest-provider"] }],
-      },
-    });
-
-    expectRuntimeRefs(["manifest-provider", "runtime-provider", "runtime-cli"]);
-    expect(loadSnapshot).not.toHaveBeenCalled();
-  });
+  expect(loadSnapshot).not.toHaveBeenCalled();
 });

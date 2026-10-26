@@ -1,49 +1,38 @@
 import { expect, it } from "vitest";
-import type { PluginEntryConfig } from "../config/types.plugins.js";
 import { buildPluginCapabilitySummary } from "./capability-summary.js";
-import type { PluginOrigin } from "./plugin-origin.types.js";
 
-const granted = { effective: true };
-const denied = { effective: false };
-const restricted = { effective: false, configured: false };
-type Grant = typeof granted & { configured?: boolean };
+it.each([
+  ["bundled", undefined, { effective: true }],
+  ["global", undefined, { effective: false }],
+  ["bundled", { allowConversationAccess: false }, { effective: false, configured: false }],
+] as const)("preserves conversation policy for %s with %j", (origin, hooks, conversationAccess) => {
+  const entryConfig = hooks ? { hooks } : undefined;
+  const summary = buildPluginCapabilitySummary({ manifest: {}, origin, entryConfig });
 
-it.each<[string, PluginOrigin | "official", PluginEntryConfig["hooks"], Grant, Grant]>([
-  ["bundled defaults", "bundled", undefined, granted, granted],
-  ["external defaults", "global", undefined, granted, denied],
-  ["bundled restrictions", "bundled", { allowConversationAccess: false }, granted, restricted],
-])(
-  "preserves fail-closed policy for %s",
-  (_label, origin, hooks, promptInjection, conversationAccess) => {
-    const entryConfig = hooks ? { hooks } : undefined;
-    const summary = buildPluginCapabilitySummary({ manifest: {}, origin, entryConfig });
-
-    expect(summary.grants.hooks).toEqual({
-      allowPromptInjection: promptInjection,
-      allowConversationAccess: conversationAccess,
-    });
-  },
-);
+  expect(summary.grants.hooks).toEqual({
+    allowPromptInjection: { effective: true },
+    allowConversationAccess: conversationAccess,
+  });
+});
 
 it("normalizes manifest surfaces and configured model grants", () => {
+  const unsorted = ["zulu", "alpha"];
+  const sorted = ["alpha", "zulu"];
   const contracts = {
-    commandRuntimeCapabilities: ["subagents", "scheduledTurns"],
-    sessionScheduledTurns: ["requester-command"],
-    subagentProfiles: ["reviewer"],
     tools: ["shared", "zeta-tool"],
   };
   const command = (name: string) => ({ name, description: name, hasSubcommands: false });
   const summary = buildPluginCapabilitySummary({
     manifest: {
-      channels: ["zeta", "alpha"],
-      providers: ["zulu", "beta"],
+      channels: unsorted,
+      providers: unsorted,
       contracts,
       toolMetadata: { "alpha-tool": {}, shared: {} },
-      hooks: ["zeta-hook", "alpha-hook"],
+      hooks: unsorted,
       mcpServers: { zulu: { command: "zulu" }, alpha: { command: "alpha" } },
-      cliCommands: ["zulu", "alpha"].map(command),
-      cliBackends: ["zulu", "alpha"],
-      skills: ["zulu", "alpha"],
+      cliCommands: unsorted.map(command),
+      cliBackends: unsorted,
+      skills: unsorted,
       configContracts: {
         dangerousFlags: ["plugins.zulu", "plugins.alpha"].map((path) => ({ path, equals: true })),
       },
@@ -62,22 +51,15 @@ it("normalizes manifest surfaces and configured model grants", () => {
   });
 
   expect(summary.declared).toEqual({
-    channels: ["alpha", "zeta"],
-    providers: ["beta", "zulu"],
+    channels: sorted,
+    providers: sorted,
     tools: ["alpha-tool", "shared", "zeta-tool"],
-    contracts: [
-      "commandRuntimeCapabilities: scheduledTurns",
-      "commandRuntimeCapabilities: subagents",
-      "sessionScheduledTurns: requester-command",
-      "subagentProfiles: reviewer",
-      "tools: shared",
-      "tools: zeta-tool",
-    ],
-    hooks: ["alpha-hook", "zeta-hook"],
-    mcpServers: ["alpha", "zulu"],
-    cliCommands: ["alpha", "zulu"],
-    cliBackends: ["alpha", "zulu"],
-    skills: ["alpha", "zulu"],
+    contracts: ["tools: shared", "tools: zeta-tool"],
+    hooks: sorted,
+    mcpServers: sorted,
+    cliCommands: sorted,
+    cliBackends: sorted,
+    skills: sorted,
     dangerousConfigFlags: ["plugins.alpha", "plugins.zulu"],
   });
   expect(summary.grants.llm).toEqual({

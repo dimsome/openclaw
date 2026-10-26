@@ -2,32 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as configMetadata from "../config/io.plugin-metadata.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import * as discovery from "./discovery.js";
+import { resolveEffectivePluginIds } from "./effective-plugin-ids.js";
 import { clearPluginMetadataLifecycleCaches } from "./plugin-metadata-lifecycle.js";
+import { loadPluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.types.js";
+import { buildPluginSnapshotReportAsync, withPluginDiagnosticsReport } from "./status.js";
 import { createColdPluginFixture } from "./test-helpers/cold-plugin-fixtures.js";
-
-vi.mock("../config/io.plugin-metadata.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../config/io.plugin-metadata.js")>();
-  return {
-    ...actual,
-    resolveConfigWidePluginManifestRegistry: vi.fn(actual.resolveConfigWidePluginManifestRegistry),
-  };
-});
-
-vi.mock("./discovery.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./discovery.js")>();
-  return {
-    ...actual,
-    discoverOpenClawPlugins: vi.fn(actual.discoverOpenClawPlugins),
-  };
-});
-
-const { buildPluginSnapshotReportAsync, withPluginDiagnosticsReport } = await import("./status.js");
-const { resolveEffectivePluginIds } = await import("./effective-plugin-ids.js");
-const { loadPluginMetadataSnapshot } = await import("./plugin-metadata-snapshot.js");
-const { resolveConfigWidePluginManifestRegistry } = await import("../config/io.plugin-metadata.js");
-const { discoverOpenClawPlugins } = await import("./discovery.js");
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-effective-plugin-ids-"));
 
@@ -55,36 +38,37 @@ const config: OpenClawConfig = {
 
 function counts(ids: string[]) {
   return {
-    rebuilds: vi.mocked(resolveConfigWidePluginManifestRegistry).mock.calls.length,
-    scans: vi.mocked(discoverOpenClawPlugins).mock.calls.length,
+    rebuilds: vi.mocked(configMetadata.resolveConfigWidePluginManifestRegistry).mock.calls.length,
+    scans: vi.mocked(discovery.discoverOpenClawPlugins).mock.calls.length,
     ids,
   };
 }
 
-function resetCounters() {
-  vi.clearAllMocks();
-}
-
 async function countReport(effectiveOnly: boolean) {
-  resetCounters();
+  vi.clearAllMocks();
   return withPluginDiagnosticsReport({ config, env: process.env, effectiveOnly }, (report) =>
     counts(report.plugins.map((plugin) => plugin.id).toSorted()),
   );
 }
 
 function countResolve(metadataSnapshot: PluginMetadataSnapshot) {
-  resetCounters();
+  vi.clearAllMocks();
   return counts(resolveEffectivePluginIds({ config, env: process.env, metadataSnapshot }));
 }
 
 beforeEach(() => {
+  vi.spyOn(configMetadata, "resolveConfigWidePluginManifestRegistry");
+  vi.spyOn(discovery, "discoverOpenClawPlugins");
   clearPluginMetadataLifecycleCaches();
   vi.stubEnv("OPENCLAW_DISABLE_BUNDLED_PLUGINS", "1");
   vi.stubEnv("OPENCLAW_HOME", path.join(tempRoot, "home"));
   vi.stubEnv("OPENCLAW_STATE_DIR", path.join(tempRoot, "state"));
 });
 
-afterEach(clearPluginMetadataLifecycleCaches);
+afterEach(() => {
+  clearPluginMetadataLifecycleCaches();
+  vi.restoreAllMocks();
+});
 
 afterAll(() => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -96,13 +80,12 @@ it("does not re-derive discovery when reporting effective-only plugins", async (
   clearPluginMetadataLifecycleCaches();
   const effective = await countReport(true);
 
-  expect(effective.ids).toEqual(["cold-plugin", "other-plugin"]);
-  expect(effective.rebuilds).toBe(0);
+  expect(effective).toMatchObject({ ids: pluginIds, rebuilds: 0 });
   expect(effective.scans).toBeLessThanOrEqual(all.scans);
 });
 
 it.each([
-  { onlyPluginIds: undefined, expected: ["cold-plugin", "other-plugin"] },
+  { onlyPluginIds: undefined, expected: pluginIds },
   { onlyPluginIds: [" other-plugin ", "missing-plugin"], expected: ["other-plugin"] },
   { onlyPluginIds: [], expected: [] },
 ])(
@@ -133,7 +116,6 @@ it("only reuses a snapshot that answers for the whole config", () => {
   const scoped = countResolve(scopedSnapshot);
 
   expect([full.ids, scoped.ids]).toEqual([withoutSnapshot, withoutSnapshot]);
-  expect(full.scans).toBe(0);
-  expect(full.rebuilds).toBe(0);
+  expect(full).toMatchObject({ scans: 0, rebuilds: 0 });
   expect(scoped.rebuilds).not.toBe(0);
 });

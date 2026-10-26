@@ -58,9 +58,7 @@ it("indexes canonical transcript sources and retained legacy installed-index con
 it("prepares immutable ownership and install records once while preserving caller copies", () => {
   withPluginCache(createPluginCache(), () => {
     const snapshot = createSnapshot();
-    const acceptedSurface = createPluginDeclaredSurface({
-      channels: ["fixture-channel"],
-    });
+    const acceptedSurface = createPluginDeclaredSurface({ channels: ["fixture-channel"] });
     assert(snapshot.index.installRecords.alpha);
     snapshot.index.installRecords.alpha.acceptedSurface = acceptedSurface;
     finalizePluginMetadataSnapshot(snapshot);
