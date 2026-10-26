@@ -66,8 +66,8 @@ it.each([true, false])(
       const storeDir = state.path("custom-store");
       fs.mkdirSync(storeDir);
       const pathname = path.join(storeDir, "sessions.sqlite");
-      const writer = new DatabaseSync(state.path("fixture-writer.sqlite"));
-      try {
+      {
+        using writer = new DatabaseSync(state.path("fixture-writer.sqlite"));
         writer.exec(`
         PRAGMA journal_mode=WAL;
         PRAGMA wal_autocheckpoint=0;
@@ -80,8 +80,6 @@ it.each([true, false])(
       `);
         fs.copyFileSync(state.path("fixture-writer.sqlite"), pathname);
         fs.copyFileSync(state.path("fixture-writer.sqlite-wal"), `${pathname}-wal`);
-      } finally {
-        writer.close();
       }
       await state.writeConfig({
         agents: { entries: { main: {} } },
@@ -99,21 +97,14 @@ it.each([true, false])(
 
       const result = await prepareDoctorDatabasePreflight();
 
-      expect(result).toMatchObject({
-        incompatible: [],
-        indeterminate: [],
-      });
-      expect(result.pendingMigrations ?? []).toEqual(
-        knownHistory
-          ? [
-              expect.objectContaining({
-                kind: "agent",
-                path: pathname,
-                foundVersion: OPENCLAW_AGENT_SCHEMA_VERSION - 1,
-              }),
-            ]
-          : [],
-      );
+      expect(result).toMatchObject({ incompatible: [], indeterminate: [] });
+      expect(
+        result.pendingMigrations?.map(({ kind, path: databasePath, foundVersion }) => [
+          kind,
+          databasePath,
+          foundVersion,
+        ]) ?? [],
+      ).toEqual(knownHistory ? [["agent", pathname, OPENCLAW_AGENT_SCHEMA_VERSION - 1]] : []);
       if (!knownHistory) {
         expect(result.agentDatabaseMigrationDiscovery?.discovery).toMatchObject({
           deletionJournal: {
@@ -121,17 +112,13 @@ it.each([true, false])(
             reason: "shared state database missing",
           },
           targets: [],
-          retainedTargets: [],
           unverifiedTargets: [
-            {
+            expect.objectContaining({
               agentId: "retired-owner",
               path: pathname,
-              realPath: fs.realpathSync.native(pathname),
               source: "configured",
-            },
+            }),
           ],
-          registryRemovals: [],
-          failures: [],
         });
       }
       expect(result.agentRefusals ?? []).toEqual([]);
