@@ -114,22 +114,10 @@ it("AppSidebar person activity card projects authorized facts and keeps links st
   expect(sections[1]?.querySelectorAll("a")).toHaveLength(3);
   expect(sections[1]?.textContent).not.toContain("Session updated");
   expect(sections[1]?.querySelectorAll(".person-activity-card__session-age")).toHaveLength(3);
-  for (const hidden of [
-    "secret-title",
-    "private-tab",
-    "internal-host",
-    "openclaw-tui",
-    "openclaw-macos",
-    "192.0.2.12",
-    "Research global",
-    "Visible 2",
-    "Visible 3",
-    "Visible 7",
-  ]) {
-    expect(card.outerHTML).not.toContain(hidden);
-  }
+  expect(card.outerHTML).not.toMatch(
+    /secret-title|private-tab|internal-host|openclaw-tui|openclaw-macos|192\.0\.2\.12|Research global|Visible [237]/,
+  );
   expect(view.all("[data-viewer-id]")).toHaveLength(0);
-
   const links = () =>
     Array.from(cardElement()?.querySelectorAll<HTMLAnchorElement>("section:last-of-type a") ?? []);
   const publish = async (rows: typeof result.sessions, expected = links()) => {
@@ -149,7 +137,6 @@ it("AppSidebar person activity card projects authorized facts and keeps links st
   await publish(updated);
   expect(document.activeElement).toBe(initial[2]);
   expect(initial[2]!.querySelector("time")?.dateTime).toBe(new Date(now + 6000).toISOString());
-
   await publish(
     updated.filter((row) => row.key !== "agent:research:recent-3"),
     initial.slice(0, 2),
@@ -163,7 +150,6 @@ it("AppSidebar person activity card projects authorized facts and keeps links st
     initial.slice(0, 1),
   );
   await publish(updated);
-
   const reopen = async () => {
     trigger.blur();
     trigger.focus();
