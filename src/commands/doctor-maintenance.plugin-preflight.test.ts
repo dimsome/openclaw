@@ -25,16 +25,12 @@ it("admits plugin-only repair before executing setup or doctor modules", async (
   const configPath = path.join(root, "openclaw.json");
   const bundledDir = path.join(root, "bundled-disabled");
   fs.mkdirSync(bundledDir);
-  for (const [key, value] of Object.entries({
-    HOME: root,
-    USERPROFILE: root,
-    OPENCLAW_STATE_DIR: stateDir,
-    OPENCLAW_CONFIG_PATH: configPath,
-    OPENCLAW_BUNDLED_PLUGINS_DIR: bundledDir,
-    OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
-  })) {
-    vi.stubEnv(key, value);
-  }
+  vi.stubEnv("HOME", root);
+  vi.stubEnv("USERPROFILE", root);
+  vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+  vi.stubEnv("OPENCLAW_CONFIG_PATH", configPath);
+  vi.stubEnv("OPENCLAW_BUNDLED_PLUGINS_DIR", bundledDir);
+  vi.stubEnv("OPENCLAW_DISABLE_BUNDLED_PLUGINS", "1");
   vi.stubEnv("OPENCLAW_HOME", undefined);
   const pluginId = "fixture-maintenance-owner";
   const packageName = `@fixture/${pluginId}`;

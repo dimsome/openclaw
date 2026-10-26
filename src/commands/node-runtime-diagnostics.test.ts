@@ -3,7 +3,6 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { createCliTtyMock } from "../cli/test-runtime-capture.js";
-import { resolveDoctorContributionHealthChecks } from "../flows/doctor-health-contributions.js";
 import * as runtimeGuard from "../infra/runtime-guard.js";
 import { runDoctorLintCli } from "./doctor-lint.js";
 import { statusCommand } from "./status.command.js";
@@ -105,27 +104,25 @@ it.each(["invalid config", "snapshot failure"])(
 
 it("keeps repair guidance in JSON despite invalid config", async () => {
   useInvalidConfig();
-  mockCliRuntime("22.23.2", false);
+  mockCliRuntime("26.0.0", false);
   const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   expect(await runDoctorLintCli(runtime, { json: true })).toBe(1);
   const payload = JSON.parse(String(stdout.mock.calls.at(-1)?.[0]));
   expect(payload.findings).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ checkId: "core/doctor/final-config-validation" }),
-      expect.objectContaining({ checkId: nodeCheck, fixHint: repairHint }),
+      expect.objectContaining({
+        checkId: nodeCheck,
+        message: contains("26.0.0"),
+        fixHint: repairHint,
+      }),
+      expect.objectContaining({
+        source: "gateway-service",
+        message: contains("22.23.2"),
+        fixHint: repairHint,
+      }),
     ]),
   );
-});
-
-it("registers CLI and service Node repair findings", async () => {
-  mockCliRuntime("26.0.0", false);
-  const checks = await resolveDoctorContributionHealthChecks();
-  const check = checks.find((entry) => entry.id === nodeCheck);
-  const findings = await check?.detect({ mode: "lint", cfg: {}, runtime, env: {} });
-  expect(findings).toMatchObject([
-    { message: contains("26.0.0"), fixHint: repairHint },
-    { source: "gateway-service", message: contains("22.23.2"), fixHint: repairHint },
-  ]);
 });
 
 it.each(["unsupported", "probe-failed"] as const)(

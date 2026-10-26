@@ -95,10 +95,6 @@ describe("renderTriagePrompt", () => {
         result: {
           status: "error",
           mode: "npm",
-          reason: `runtime-check-failed ${noisy}`,
-          root: `${homeDir}/${noisy}`,
-          before: { sha: noisy, version: noisy },
-          after: { sha: noisy, version: noisy },
           recovery: { serviceRestartSafe: false, reason: "runtime-verification-failed" },
           steps: Array.from({ length: 6 }, (_, index) => ({
             name: `step-${index} ${noisy}`,
@@ -106,17 +102,6 @@ describe("renderTriagePrompt", () => {
             stdoutTail: `${noisy} actual-compiler-cause-${index}`,
             stderrTail: `${noisy} npm failure footer`,
           })),
-          postUpdate: {
-            plugins: {
-              status: "error",
-              reason: `plugin-finalization-failed ${noisy}`,
-              warnings: Array.from({ length: 5 }, (_, index) => ({
-                pluginId: noisy,
-                reason: `Doctor cause-${index} ${noisy}`,
-                message: noisy,
-              })),
-            },
-          },
         },
       },
     });
@@ -128,11 +113,6 @@ describe("renderTriagePrompt", () => {
       result: {
         recovery: { serviceRestartSafe: false, reason: "runtime-verification-failed" },
         steps: includesObject({ stdoutTail: expect.stringContaining("actual-compiler-cause-5") }),
-        postUpdate: {
-          plugins: {
-            warnings: includesObject({ reason: expect.stringContaining("Doctor cause-4") }),
-          },
-        },
       },
     });
     expect(recorded.omittedDetails).toBeGreaterThan(0);

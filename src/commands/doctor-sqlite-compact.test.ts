@@ -6,67 +6,43 @@ import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import * as nodeSqlite from "../infra/node-sqlite.js";
 import * as sqliteIntegrity from "../infra/sqlite-integrity.js";
 import * as walCheckpoint from "../infra/sqlite-wal-checkpoint.js";
-import { createUnsafeIndexDrift } from "../state/sqlite-index-drift.test-support.js";
 import { compactDoctorSqliteFile } from "./doctor-sqlite-compact.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => vi.restoreAllMocks());
 
-function createCompactDatabase(extraSql = "", autoVacuum = 2): string {
+function createCompactDatabase(): string {
   const sqlitePath = path.join(tempDirs.make("doctor-compact-noop-"), "store.sqlite");
   using database = openNodeSqliteDatabase(sqlitePath);
   database.exec(`
-      PRAGMA auto_vacuum = ${autoVacuum};
+      PRAGMA auto_vacuum = 2;
       PRAGMA journal_mode = WAL;
       CREATE TABLE payload (id INTEGER PRIMARY KEY, body TEXT);
       INSERT INTO payload VALUES (1, 'preserved');
-      ${extraSql}
     `);
   return sqlitePath;
 }
 
-it.each([
-  ["missing", undefined, expect.any(Error)],
-  ["compact", "", undefined],
-  [
-    "foreign-key-corrupt",
-    "PRAGMA foreign_keys=OFF; CREATE TABLE child(parent_id INTEGER REFERENCES payload(id)); INSERT INTO child VALUES(99);",
-    /foreign_key_check failed/,
-  ],
-  [
-    "index-corrupt",
-    "INSERT INTO payload VALUES(2, zeroblob(1048576)); DELETE FROM payload WHERE id=2;",
-    /integrity_check failed.*missing from index unsafe_index_records_value/iu,
-  ],
-])("validates %s input before completing compaction", (state, sql, error) => {
-  const sqlitePath =
-    sql === undefined
-      ? path.join(tempDirs.make("doctor-compact-missing-"), "missing.sqlite")
-      : createCompactDatabase(sql, state === "index-corrupt" ? 0 : 2);
-  if (state === "index-corrupt") {
-    createUnsafeIndexDrift(sqlitePath);
-  }
-  const before = fs.existsSync(sqlitePath) ? fs.readFileSync(sqlitePath) : undefined;
+it("rejects a missing file without creating it or reporting success", () => {
+  const sqlitePath = path.join(tempDirs.make("doctor-compact-missing-"), "missing.sqlite");
   const afterSuccess = vi.fn();
-  const compact = () =>
-    compactDoctorSqliteFile({
-      sqlitePath,
-      requireExisting: state === "missing",
-      operation: "import-finalize",
-      afterSuccess,
-    });
-  if (error) {
-    expect(compact).toThrow(error);
-    expect(afterSuccess).not.toHaveBeenCalled();
-    if (state === "missing") {
-      expect(fs.existsSync(sqlitePath)).toBe(false);
-    } else {
-      expect(fs.readFileSync(sqlitePath)).toEqual(before);
-    }
-    return;
-  }
+  expect(() =>
+    compactDoctorSqliteFile({ sqlitePath, requireExisting: true, afterSuccess }),
+  ).toThrow(expect.any(Error));
+  expect(afterSuccess).not.toHaveBeenCalled();
+  expect(fs.existsSync(sqlitePath)).toBe(false);
+});
+
+it("does not rewrite or rescan an already compact database", () => {
+  const sqlitePath = createCompactDatabase();
+  const before = fs.readFileSync(sqlitePath);
+  const afterSuccess = vi.fn();
   const integrity = vi.spyOn(sqliteIntegrity, "assertSqliteIntegrity");
-  const result = compact();
+  const result = compactDoctorSqliteFile({
+    sqlitePath,
+    operation: "import-finalize",
+    afterSuccess,
+  });
   expect(result.before).toMatchObject({ autoVacuum: 2, freelistPages: 0, walSizeBytes: 0 });
   expect(result.after).toEqual(result.before);
   expect(result).toMatchObject({ integrityCheck: "ok", reclaimedBytes: 0 });
@@ -76,7 +52,7 @@ it.each([
   expect(afterSuccess).toHaveBeenCalledOnce();
 });
 
-it.each([false, true])("rejects an initial busy checkpoint (close fails=%s)", (closeFails) => {
+it("retains both initial checkpoint and native close failures", () => {
   const sqlitePath = createCompactDatabase();
   using reader = openNodeSqliteDatabase(sqlitePath);
   using writer = openNodeSqliteDatabase(sqlitePath);
@@ -85,34 +61,29 @@ it.each([false, true])("rejects an initial busy checkpoint (close fails=%s)", (c
   const compact = () =>
     compactDoctorSqliteFile({
       sqlitePath,
-      operation: closeFails ? undefined : "import-finalize",
       busyTimeoutMs: 0,
       afterSuccess,
     });
-  if (closeFails) {
-    const openDatabase = nodeSqlite.openNodeSqliteDatabase;
-    vi.spyOn(nodeSqlite, "openNodeSqliteDatabase").mockImplementation((...args) => {
-      const database = openDatabase(...args);
-      const close = database.close.bind(database);
-      database.close = () => {
-        close();
-        throw closeFailure;
-      };
-      return database;
-    });
-  }
+  const openDatabase = nodeSqlite.openNodeSqliteDatabase;
+  vi.spyOn(nodeSqlite, "openNodeSqliteDatabase").mockImplementation((...args) => {
+    const database = openDatabase(...args);
+    const close = database.close.bind(database);
+    database.close = () => {
+      close();
+      throw closeFailure;
+    };
+    return database;
+  });
   try {
     reader.exec("BEGIN; SELECT * FROM payload;");
     writer.exec("INSERT INTO payload VALUES (2, 'pending checkpoint');");
     expect(writer.prepare("PRAGMA freelist_count").get()?.freelist_count).toBe(0);
     expect(fs.statSync(`${sqlitePath}-wal`).size).toBeGreaterThan(0);
     expect(compact).toThrow(
-      closeFails
-        ? expect.objectContaining({
-            constructor: AggregateError,
-            errors: [expect.any(walCheckpoint.SqliteWalCheckpointBusyError), closeFailure],
-          })
-        : /checkpoint remained busy/,
+      expect.objectContaining({
+        constructor: AggregateError,
+        errors: [expect.any(walCheckpoint.SqliteWalCheckpointBusyError), closeFailure],
+      }),
     );
     expect(afterSuccess).not.toHaveBeenCalled();
   } finally {

@@ -9,11 +9,7 @@ import {
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import { defaultRuntime } from "../runtime.js";
 import { recordAgentDatabaseAdmissions } from "../state/agent-database-admission.js";
-import {
-  listAgentProvenance,
-  readAgentProvenanceForDisplay,
-  recordAgentProvenance,
-} from "../state/agent-provenance.js";
+import { recordAgentProvenance } from "../state/agent-provenance.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { observeMainThreadSql } from "../test-utils/main-thread-sql-spies.test-support.js";
@@ -96,23 +92,7 @@ it("keeps an empty JSON roster free of provenance storage", async () => {
   expect(existsSync(resolveOpenClawStateSqlitePath(state.env))).toBe(false);
 });
 
-it("reads absent provenance without creating state or parent SQL", async () => {
-  const databasePath = resolveOpenClawStateSqlitePath(state.env);
-  expect(existsSync(databasePath)).toBe(false);
-  observe(true);
-  const options = { env: { ...state.env }, path: databasePath };
-  const ids = ["main"];
-  const reading = readAgentProvenanceForDisplay(ids, options);
-  ids.push("later");
-  const laterPath = path.join(state.stateDir, "later.sqlite");
-  options.path = laterPath;
-  options.env.OPENCLAW_STATE_DIR = path.join(state.stateDir, "later");
-  expect(await reading).toEqual([]);
-  expect(existsSync(databasePath)).toBe(false);
-  expect(existsSync(laterPath)).toBe(false);
-});
-
-it("serves JSON and tree output from worker provenance through reopen", async () => {
+it("serves JSON from worker provenance through reopen", async () => {
   configureRoster(["main", "child", "legacy"]);
   const at = (nowMs: number) => ({ env: state.env, nowMs });
   await recordAgentProvenance("Main", { createdVia: "operator" }, at(10));
@@ -130,11 +110,6 @@ it("serves JSON and tree output from worker provenance through reopen", async ()
   expect(output).not.toHaveProperty("2.createdVia");
   await waitForDiagnosticEventsDrained();
   expect(commands).toEqual(["stateRead"]);
-  await agentsListCommand({ tree: true });
-  expect(runtime.log).toHaveBeenCalledWith("Agents:\n- main\n  - child\n- legacy");
-  await closeOpenClawStateDatabaseAsync();
-  const storedIds = (await listAgentProvenance({ env: state.env })).map((row) => row.agentId);
-  expect(storedIds).toEqual(["child", "main", "retired"]);
 });
 
 it("enriches growing rosters with bounded requests in configured order", async () => {

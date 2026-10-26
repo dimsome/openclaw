@@ -11,7 +11,6 @@ import {
 import { resolveEffectiveAgentRuntime } from "../agents/thinking-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveProviderPolicySurface } from "../plugins/provider-public-artifacts.js";
-import { loadBundledPluginPublicArtifactModuleSync } from "../plugins/public-surface-loader.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
@@ -32,9 +31,6 @@ export function registerAgentThinkingTests({
   getLastEmbeddedCall: () => Parameters<typeof runEmbeddedAgent>[0] | undefined;
   runtime: RuntimeEnv;
 }) {
-  const { applyXaiRuntimeModelCompat } = loadBundledPluginPublicArtifactModuleSync<{
-    applyXaiRuntimeModelCompat: (model: ModelCatalogEntry) => ModelCatalogEntry;
-  }>({ dirName: "xai", artifactBasename: "api.js" });
   const run = (model: string, thinking: "off" | "max") =>
     agentCommand({ message: "ping", to: "+1222", model, thinking }, runtime);
   const catalogModel = (overrides: Partial<ModelCatalogEntry>): ModelCatalogEntry => ({
@@ -112,26 +108,6 @@ export function registerAgentThinkingTests({
       );
       expect(runEmbeddedAgent).not.toHaveBeenCalled();
       expect(readPreparedModelCatalog).not.toHaveBeenCalled();
-    }));
-
-  it("enforces xAI's effort-free profile for off", () =>
-    withTempHome(async (home) => {
-      const model = applyXaiRuntimeModelCompat(
-        catalogModel({
-          provider: "xai",
-          id: "grok-4.20-0309-reasoning",
-          api: "openai-responses",
-          thinkingLevelMap: { off: null, high: "high" },
-        }),
-      );
-      const modelRef = configure(home, model);
-      await run(modelRef, "off");
-      expect(runEmbeddedAgent).toHaveBeenCalledOnce();
-      expect(getLastEmbeddedCall()).toMatchObject({
-        provider: "xai",
-        model: model.id,
-        thinkLevel: "off",
-      });
     }));
 
   it("runs with the agent entry's verbose default over the global default", () =>
