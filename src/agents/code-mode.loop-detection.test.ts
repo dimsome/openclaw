@@ -2,26 +2,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { resetDiagnosticSessionStateForTest } from "../logging/diagnostic-session-state.js";
 import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.js";
-import {
-  createCatalogCodeModeHarness,
-  codeModeRunner,
-  resetCodeModeTestState,
-  resultDetails,
-} from "./code-mode.test-support.js";
+import * as codeMode from "./code-mode.test-support.js";
 import { fakeTool } from "./test-helpers/fake-tool.js";
 import { jsonResult } from "./tools/common.js";
 
 function createLoopHarness(maxOutputBytes?: number) {
   const fixture = fakeTool("loop_fixture", "A stable fixture operation");
-  const harness = createCatalogCodeModeHarness([fixture], { codeMode: { maxOutputBytes } });
+  const harness = codeMode.createCatalogCodeModeHarness([fixture], {
+    codeMode: { maxOutputBytes },
+  });
   const tools = harness.tools.map((tool) =>
     wrapToolWithBeforeToolCallHook(tool, { ...harness.ctx, loopDetection: { enabled: true } }),
   );
-  return { ...codeModeRunner(tools), fixture };
+  return { ...codeMode.codeModeRunner(tools), fixture };
 }
 
 afterEach(async () => {
-  await resetCodeModeTestState();
+  await codeMode.resetCodeModeTestState();
   vi.useRealTimers();
   resetDiagnosticSessionStateForTest();
 });
@@ -124,7 +121,7 @@ describe("Code Mode loop protection", () => {
     const initial = execute(code, "start-changing-work", { title: "Start changing work" });
     await started.promise;
     await vi.advanceTimersByTimeAsync(10_000);
-    let result = resultDetails(await initial);
+    let result = codeMode.resultDetails(await initial);
     const runId = result.runId;
     for (let index = 0; index < 12; index++) {
       expect(result.status).toBe("waiting");
