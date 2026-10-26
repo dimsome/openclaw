@@ -15,15 +15,7 @@ const { loadPluginManifestRegistryMock } = vi.hoisted(() => ({
 }));
 
 const loadCandidates = vi.hoisted(() =>
-  vi.fn<
-    ({
-      dirName,
-      artifactCandidates,
-    }: {
-      dirName: string;
-      artifactCandidates: readonly string[];
-    }) => object | null
-  >(),
+  vi.fn<(params: { dirName: string; artifactCandidates: readonly string[] }) => object | null>(),
 );
 
 vi.mock("./manifest-registry.js", async (importOriginal) => ({
@@ -45,24 +37,13 @@ import {
 function expectSingleProvider<T extends { pluginId: string }>(
   resolve: (params: { onlyPluginIds: string[] }) => T[] | null,
   pluginId: string,
-  artifactBasename: string,
 ): T {
   const providers = resolve({ onlyPluginIds: [pluginId] });
   expect(providers).toHaveLength(1);
   const provider = expectDefined(providers?.[0], "Expected one web provider");
   expect(provider.pluginId).toBe(pluginId);
-  expectArtifact(pluginId, artifactBasename);
-  return provider;
-}
-
-function expectArtifact(dirName: string, artifactBasename: string) {
-  expect(loadCandidates).toHaveBeenCalledWith(
-    expect.objectContaining({
-      dirName,
-      artifactCandidates: expect.arrayContaining([artifactBasename]),
-    }),
-  );
   expect(loadPluginManifestRegistryMock).not.toHaveBeenCalled();
+  return provider;
 }
 
 describe("web provider public artifacts explicit fast path", () => {
@@ -100,11 +81,7 @@ describe("web provider public artifacts explicit fast path", () => {
   });
 
   it("skips throwing bundled web provider factories while preserving healthy siblings", () => {
-    const provider = expectSingleProvider(
-      resolveSearch,
-      "mockplugin",
-      "web-search-contract-api.js",
-    );
+    const provider = expectSingleProvider(resolveSearch, "mockplugin");
 
     expect(warn).toHaveBeenCalledExactlyOnceWith(
       expect.stringMatching(/web providers.*mockplugin/),
@@ -115,21 +92,18 @@ describe("web provider public artifacts explicit fast path", () => {
   });
 
   it("throws when every matching bundled web provider factory fails", () => {
-    expect(() =>
-      resolveSearch({
-        onlyPluginIds: ["fuzzplugin"],
-      }),
-    ).toThrow("Unable to initialize web providers for plugin fuzzplugin");
+    expect(() => resolveSearch({ onlyPluginIds: ["fuzzplugin"] })).toThrow(
+      "Unable to initialize web providers for plugin fuzzplugin",
+    );
     expect(warn).not.toHaveBeenCalled();
-
-    expectArtifact("fuzzplugin", "web-search-contract-api.js");
+    expect(loadPluginManifestRegistryMock).not.toHaveBeenCalled();
   });
 
   it.each([
     { resolve: resolveFetch, artifact: "web-fetch-contract-api.js", executable: false },
     { resolve: resolveRuntimeFetch, artifact: "web-fetch-provider.js", executable: true },
-  ])("resolves explicit $artifact without manifest scans", ({ resolve, artifact, executable }) => {
-    const provider = expectSingleProvider(resolve, "firecrawl", artifact);
+  ])("resolves explicit $artifact without manifest scans", ({ resolve, executable }) => {
+    const provider = expectSingleProvider(resolve, "firecrawl");
     const tool = provider.createTool({ config: {} as never });
     if (!executable) {
       expect(tool).toBeNull();

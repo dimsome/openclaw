@@ -7,6 +7,16 @@ import {
   resetPluginSlotsToDefaults,
 } from "./slots.js";
 
+function selectEngine(overrides: Partial<Parameters<typeof applyExclusiveSlotSelection>[0]> = {}) {
+  return applyExclusiveSlotSelection({
+    config: {},
+    selectedId: "vendor-plugin",
+    selectedKind: "context-engine",
+    contextEngineIds: ["canonical-engine"],
+    ...overrides,
+  });
+}
+
 describe("resetPluginSlotsToDefaults", () => {
   it("resets every slot owned by the plugin", () => {
     const slots = { memory: "dual-plugin", contextEngine: "dual-plugin" };
@@ -24,77 +34,51 @@ describe("resetPluginSlotsToDefaults", () => {
 describe("applyExclusiveSlotSelection", () => {
   it("selects the declared engine rather than its plugin ID", () => {
     const warn = vi.fn();
-    const result = applyExclusiveSlotSelection({
-      config: {},
-      selectedId: "vendor-plugin",
-      selectedKind: "context-engine",
-      contextEngineIds: ["CanonicalEngine"],
-      warn,
-    });
+    const result = selectEngine({ contextEngineIds: ["CanonicalEngine"], warn });
     expect(result.plugins?.slots?.contextEngine).toBe("CanonicalEngine");
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it.each(["other-engine", "none", "second-engine"])("preserves explicit choice %s", (choice) => {
-    const config: OpenClawConfig = { plugins: { slots: { contextEngine: choice } } };
-    const result = applyExclusiveSlotSelection({
-      config,
-      selectedId: "vendor-plugin",
-      selectedKind: "context-engine",
-      contextEngineIds: ["second-engine"],
-    });
-    expect(result).toBe(config);
-  });
+  it.each([
+    { choice: "other-engine", legacyContextEngineOwnerId: undefined },
+    { choice: "none", legacyContextEngineOwnerId: undefined },
+    { choice: "second-engine", legacyContextEngineOwnerId: undefined },
+    { choice: "vendor-plugin", legacyContextEngineOwnerId: undefined },
+    { choice: "vendor-plugin", legacyContextEngineOwnerId: "owner-a" },
+  ])(
+    "preserves explicit choice $choice with legacy owner $legacyContextEngineOwnerId",
+    ({ choice, legacyContextEngineOwnerId }) => {
+      const config: OpenClawConfig = { plugins: { slots: { contextEngine: choice } } };
+      expect(
+        selectEngine({ config, contextEngineIds: ["second-engine"], legacyContextEngineOwnerId }),
+      ).toBe(config);
+    },
+  );
 
-  it("does not guess a multi-engine default while still selecting a memory slot", () => {
-    const warn = vi.fn();
-    const result = applyExclusiveSlotSelection({
-      config: {},
-      selectedId: "vendor-plugin",
-      selectedKind: ["memory", "context-engine"],
-      contextEngineIds: ["first", "second"],
-      warn,
-    });
-    expect(result.plugins?.slots).toEqual({ memory: "vendor-plugin" });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("explicitly"));
-  });
-
-  it("reports the multi-engine warning even when no config changes", () => {
-    const warn = vi.fn();
-    const config: OpenClawConfig = {};
-    const result = applyExclusiveSlotSelection({
-      config,
-      selectedId: "vendor-plugin",
-      selectedKind: "context-engine",
-      contextEngineIds: ["first", "second"],
-      warn,
-    });
-    expect(result).toBe(config);
-    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("explicitly"));
-  });
-
-  it.each([undefined, "owner-a"])(
-    "preserves a plugin-ID selector without legacy ownership: %s",
-    (legacyContextEngineOwnerId) => {
-      const config: OpenClawConfig = { plugins: { slots: { contextEngine: "vendor-plugin" } } };
-      const result = applyExclusiveSlotSelection({
+  it.each([false, true])(
+    "warns for multiple engines while selecting memory only when requested: %s",
+    (memory) => {
+      const warn = vi.fn();
+      const config: OpenClawConfig = {};
+      const result = selectEngine({
         config,
-        selectedId: "vendor-plugin",
-        selectedKind: "context-engine",
-        contextEngineIds: ["canonical-engine"],
-        legacyContextEngineOwnerId,
+        selectedKind: memory ? ["memory", "context-engine"] : "context-engine",
+        contextEngineIds: ["first", "second"],
+        warn,
       });
-      expect(result).toBe(config);
+      if (memory) {
+        expect(result.plugins?.slots).toEqual({ memory: "vendor-plugin" });
+      } else {
+        expect(result).toBe(config);
+      }
+      expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining("explicitly"));
     },
   );
 
   it("repairs the old plugin-ID selection for a uniquely declared engine", () => {
-    const result = applyExclusiveSlotSelection({
+    const result = selectEngine({
       config: { plugins: { slots: { contextEngine: "vendor-plugin" } } },
       legacyContextEngineOwnerId: "vendor-plugin",
-      selectedId: "vendor-plugin",
-      selectedKind: "context-engine",
-      contextEngineIds: ["canonical-engine"],
     });
     expect(result.plugins?.slots?.contextEngine).toBe("canonical-engine");
   });

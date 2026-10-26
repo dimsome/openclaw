@@ -2,17 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createEmptyPluginRegistry } from "./registry-empty.js";
 import { withPluginRuntimeGenerationRegistryScope } from "./runtime/generation-state.js";
 
-type SyntheticAuthRegistrySnapshotResult = {
-  source: "persisted" | "provided" | "derived";
-  snapshot: {
-    plugins: Array<{ syntheticAuthRefs?: string[] }>;
-  };
-  diagnostics: [];
-};
-
 const getPluginRegistryState = vi.hoisted(() => vi.fn());
 const loadSnapshot = vi.hoisted(() =>
-  vi.fn<(_params?: unknown) => SyntheticAuthRegistrySnapshotResult>(),
+  vi.fn<
+    () => {
+      source: "persisted" | "derived";
+      snapshot: { plugins: Array<{ syntheticAuthRefs: string[] }> };
+      diagnostics: [];
+    }
+  >(),
 );
 
 vi.mock("./runtime-state.js", () => ({
@@ -43,12 +41,8 @@ function authProvider(id: string) {
 }
 
 function setSnapshot(
-  source: SyntheticAuthRegistrySnapshotResult["source"],
-  plugins = [
-    { syntheticAuthRefs: [" local-provider ", "local-provider", "local-cli"] },
-    { syntheticAuthRefs: ["remote-provider"] },
-    { syntheticAuthRefs: [] },
-  ],
+  source: "persisted" | "derived",
+  plugins: Array<{ syntheticAuthRefs: string[] }> = [],
 ) {
   loadSnapshot.mockReturnValue({
     source,
@@ -85,7 +79,11 @@ describe("synthetic auth runtime refs", () => {
   });
 
   it("uses persisted registry synthetic auth refs before the runtime registry exists", () => {
-    setSnapshot("persisted");
+    setSnapshot("persisted", [
+      { syntheticAuthRefs: [" local-provider ", "local-provider", "local-cli"] },
+      { syntheticAuthRefs: ["remote-provider"] },
+      { syntheticAuthRefs: [] },
+    ]);
 
     expectRuntimeRefs(["local-provider", "local-cli", "remote-provider"]);
     expect(loadSnapshot).toHaveBeenCalledWith({});
@@ -106,13 +104,8 @@ describe("synthetic auth runtime refs", () => {
   });
 
   it("does not derive the registry just to resolve synthetic auth refs", () => {
-    setSnapshot("derived");
-
-    expect(resolveRuntimeSyntheticAuthProviderRefs()).toStrictEqual([]);
-    expect(resolveRuntimeSyntheticAuthProviderRefState()).toStrictEqual({
-      refs: [],
-      complete: false,
-    });
+    setSnapshot("derived", [{ syntheticAuthRefs: ["unvalidated"] }]);
+    expectRuntimeRefs([], false);
   });
 
   it("does not treat a provided index with registry diagnostics as validated synthetic auth", () => {

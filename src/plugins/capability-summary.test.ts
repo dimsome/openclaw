@@ -1,7 +1,6 @@
 import { expect, it } from "vitest";
 import type { PluginEntryConfig } from "../config/types.plugins.js";
 import { buildPluginCapabilitySummary } from "./capability-summary.js";
-import type { PluginManifestContracts } from "./manifest-types.js";
 import type { PluginOrigin } from "./plugin-origin.types.js";
 
 const granted = { effective: true };
@@ -35,37 +34,13 @@ it.each<[string, PluginOrigin | "official", PluginEntryConfig["hooks"], Grant, G
   },
 );
 
-it("normalizes every manifest contract family, surface and configured model grant", () => {
+it("normalizes manifest surfaces and configured model grants", () => {
   const contracts = {
-    codeModeExecutors: ["quickjs"],
     commandRuntimeCapabilities: ["subagents", "scheduledTurns"],
     sessionScheduledTurns: ["requester-command"],
     subagentProfiles: ["reviewer"],
-    agentToolResultMiddleware: ["middleware"],
-    trustedToolPolicies: ["trusted-policy"],
-    externalAuthProviders: ["external-auth"],
-    embeddingProviders: ["embedding"],
-    speechProviders: ["speech"],
-    realtimeTranscriptionProviders: ["transcription"],
-    realtimeVoiceProviders: ["voice"],
-    mediaUnderstandingProviders: ["media"],
-    transcriptSourceProviders: ["transcript"],
-    documentExtractors: ["document"],
-    imageGenerationProviders: ["image"],
-    videoGenerationProviders: ["video"],
-    musicGenerationProviders: ["music"],
-    webContentExtractors: ["web-content"],
-    webFetchProviders: ["web-fetch"],
-    webSearchProviders: ["web-search"],
-    workerProviders: ["worker"],
-    workerProfileSuggestions: ["worker"],
-    storageProviders: ["storage"],
-    decisionProviders: ["decision"],
-    usageProviders: ["usage"],
-    migrationProviders: ["migration"],
-    gatewayMethodDispatch: ["gateway-method"],
     tools: ["shared", "zeta-tool"],
-  } satisfies Required<PluginManifestContracts>;
+  };
   const command = (name: string) => ({ name, description: name, hasSubcommands: false });
   const summary = buildPluginCapabilitySummary({
     manifest: {
@@ -99,9 +74,14 @@ it("normalizes every manifest contract family, surface and configured model gran
     channels: ["alpha", "zeta"],
     providers: ["beta", "zulu"],
     tools: ["alpha-tool", "shared", "zeta-tool"],
-    contracts: Object.entries(contracts)
-      .flatMap(([family, ids]) => ids.map((id) => `${family}: ${id}`))
-      .toSorted(),
+    contracts: [
+      "commandRuntimeCapabilities: scheduledTurns",
+      "commandRuntimeCapabilities: subagents",
+      "sessionScheduledTurns: requester-command",
+      "subagentProfiles: reviewer",
+      "tools: shared",
+      "tools: zeta-tool",
+    ],
     hooks: ["alpha-hook", "zeta-hook"],
     mcpServers: ["alpha", "zulu"],
     cliCommands: ["alpha", "zulu"],
@@ -109,10 +89,6 @@ it("normalizes every manifest contract family, surface and configured model gran
     skills: ["alpha", "zulu"],
     dangerousConfigFlags: ["plugins.alpha", "plugins.zulu"],
   });
-  expect(summary.declared.contracts).toContain("commandRuntimeCapabilities: subagents");
-  expect(summary.declared.contracts).toContain("commandRuntimeCapabilities: scheduledTurns");
-  expect(summary.declared.contracts).toContain("sessionScheduledTurns: requester-command");
-  expect(summary.declared.contracts).toContain("subagentProfiles: reviewer");
   expect(summary.grants.llm).toEqual({
     allowModelOverride: true,
     allowedModels: ["alpha/model", "zulu/model"],

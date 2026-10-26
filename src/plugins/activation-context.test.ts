@@ -36,6 +36,14 @@ const configWithAllow = (...allow: string[]): OpenClawConfig => ({ plugins: { al
 const enabledConfig = (...ids: string[]): OpenClawConfig => ({
   plugins: { allow: ids, entries: Object.fromEntries(ids.map((id) => [id, { enabled: true }])) },
 });
+const resolveActivation = (
+  params: Partial<Parameters<typeof resolveBundledCompatActivationInputs>[0]>,
+) =>
+  resolveBundledCompatActivationInputs({
+    applyAutoEnable: true,
+    resolveBundledPluginIds: () => [],
+    ...params,
+  });
 afterEach(() => {
   clearPluginMetadataLifecycleCaches();
   applyPluginAutoEnableMock.mockClear();
@@ -71,12 +79,7 @@ it("passes the current manifest registry into activation auto-enable", () => {
     context,
   );
 
-  resolveBundledCompatActivationInputs({
-    applyAutoEnable: true,
-    rawConfig: configWithAllow("openai"),
-    workspaceDir,
-    resolveBundledPluginIds: () => [],
-  });
+  resolveActivation({ rawConfig: configWithAllow("openai"), workspaceDir });
 
   expect(applyPluginAutoEnableMock).toHaveBeenCalledWith({
     config: configWithAllow("openai"),
@@ -89,13 +92,7 @@ it("uses the caller's exact metadata generation across lifecycle replacement", (
   const generations = ["first", "second"].map((id) => {
     const manifestRegistry = makeRegistry([{ id, channels: [], providers: [id] }]);
     const discovery = { candidates: [], diagnostics: [] } satisfies PluginDiscoveryResult;
-    resolveBundledCompatActivationInputs({
-      applyAutoEnable: true,
-      rawConfig: configWithAllow(id),
-      manifestRegistry,
-      discovery,
-      resolveBundledPluginIds: () => [],
-    });
+    resolveActivation({ rawConfig: configWithAllow(id), manifestRegistry, discovery });
     return { config: configWithAllow(id), manifestRegistry, discovery, env: process.env };
   });
 
@@ -116,8 +113,7 @@ it("applies bundled enablement once after canonical auto-enable", () => {
   });
   withBundledPluginEnablementCompatMock.mockReturnValueOnce(compatConfig);
 
-  const activation = resolveBundledCompatActivationInputs({
-    applyAutoEnable: true,
+  const activation = resolveActivation({
     rawConfig,
     env: process.env,
     workspaceDir,
