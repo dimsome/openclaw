@@ -104,9 +104,10 @@ describe("ClawRouter managed gateway contract", () => {
     const gatewayReadiness = await waitForGatewayReadiness(instance);
     expect(gatewayReadiness).toMatchObject({ ready: true, failing: [] });
 
-    expect(
+    const listedModels = JSON.parse(
       await cli(["models", "list", "--all", "--provider", "clawrouter", "--refresh", "--json"]),
-    ).toContain(MODEL_REF);
+    );
+    expect(listedModels.models).toEqual([expect.objectContaining({ key: MODEL_REF })]);
 
     const probe = await cli([
       "models",

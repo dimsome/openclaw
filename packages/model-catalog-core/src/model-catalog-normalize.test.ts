@@ -66,6 +66,21 @@ it.each<[string, unknown, unknown]>([
   expect(normalize({ [field]: raw })).toEqual({ [field]: expected });
 });
 
+it("limits configured-origin discovery to owned runtime catalogs", () => {
+  expect(
+    normalize(
+      {
+        discovery: { live: "runtime", cached: "refreshable", fixed: "static", other: "runtime" },
+        configuredEndpointDiscovery: [" LIVE ", "live", "cached", "fixed", "other", "missing"],
+      },
+      ["live", "cached", "fixed", "missing"],
+    ),
+  ).toEqual({
+    discovery: { live: "runtime", cached: "refreshable", fixed: "static" },
+    configuredEndpointDiscovery: ["live"],
+  });
+});
+
 it("keeps only explicit owned models.dev mappings without creating provider rows", () => {
   const aliases = { alias: { provider: "example" } };
   expect(
