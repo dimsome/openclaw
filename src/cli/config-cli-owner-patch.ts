@@ -29,11 +29,14 @@ function collectReplacePaths(patch: unknown, base: unknown, parentPath?: string)
 function createOwnerMergePatch(previous: OpenClawConfig, next: OpenClawConfig) {
   const patch = createMergePatch(previous, next);
   const replacePaths = collectReplacePaths(patch, previous);
-  const apply = (base: unknown) =>
-    applyMergePatch(base, patch, {
+  const apply = (base: OpenClawConfig): OpenClawConfig => {
+    const merged = applyMergePatch(base, patch, {
       mergeObjectArraysById: true,
       replaceArrayPaths: new Set(replacePaths),
-    }) as OpenClawConfig;
+    });
+    // SAFETY: a patch between validated configs over a validated config models the Gateway's merge; the Gateway validates the real result.
+    return merged as OpenClawConfig;
+  };
   return { patch, replacePaths, apply };
 }
 
