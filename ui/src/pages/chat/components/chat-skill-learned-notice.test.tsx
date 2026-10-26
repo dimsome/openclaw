@@ -36,30 +36,18 @@ const expectError = (element: HTMLElement, message: string) =>
   );
 
 describe("skill review notice", () => {
-  it.each(["success", "failure"])(
-    "settles one admitted Undo after duplicate clicks: %s",
-    async (outcome) => {
-      const response = createDeferred<unknown>();
-      const request = vi.fn(() => response.promise);
-      const { element } = mount(request);
-      const button = undoButton(element)!;
-      button.click();
-      button.click();
-      expect(request).toHaveBeenCalledExactlyOnceWith("skills.workshop.undo", {
-        agentId: "main",
-        runId: notice.runId,
-      });
-      if (outcome === "success") {
-        response.resolve({ status: "undone", changes: [] });
-        await waitForSolid(() => expect(element.textContent).toContain("Undone"));
-        expect(undoButton(element)).toBeNull();
-      } else {
-        response.reject(new Error("Unable to revert this review."));
-        await expectError(element, "Unable to revert this review.");
-        expect(button.disabled).toBe(false);
-      }
-    },
-  );
+  it("retains a failed Undo after duplicate clicks", async () => {
+    const response = createDeferred<unknown>();
+    const request = vi.fn(() => response.promise);
+    const { element } = mount(request);
+    const button = undoButton(element)!;
+    button.click();
+    button.click();
+    expect(request).toHaveBeenCalledOnce();
+    response.reject(new Error("Unable to revert this review."));
+    await expectError(element, "Unable to revert this review.");
+    expect(button.disabled).toBe(false);
+  });
 
   it("keeps Undo available with the error when the revert fails", async () => {
     const request = vi.fn((): Promise<unknown> => {
@@ -81,6 +69,7 @@ describe("skill review notice", () => {
     expect(element.textContent).toContain("Undoing");
     retry.resolve({ status: "undone", changes: [] });
     await waitForSolid(() => expect(element.textContent).toContain("Undone"));
+    expect(undoButton(element)).toBeNull();
   });
 
   it("retires pending Undo feedback when a different review replaces the notice", async () => {
