@@ -1,18 +1,12 @@
-import { sessionCreatorProfileId } from "../config/sessions/session-entry-provenance.js";
+import { sessionPersonalProfileId } from "../config/sessions/session-entry-provenance.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { prepareUserProfileIdentity } from "../state/user-profile-list.js";
+import {
+  captureResidentUserProfileAccess,
+  prepareUserProfileCatalog,
+} from "../state/user-profile-list.js";
 import { resolveOperatorRolePolicyForAssignment } from "./operator-role-policy.js";
 import { captureChannelOperatorRunAuthority } from "./operator-run-authority.js";
-
-function recapOperatorProfileId(entry: Pick<SessionEntry, "owner" | "createdActor">) {
-  const assigned = entry.owner?.actor;
-  return assigned
-    ? assigned.type === "human"
-      ? assigned.id
-      : undefined
-    : sessionCreatorProfileId(entry.createdActor);
-}
 
 /** Bind the session owner's restriction, independently of the viewer requesting a refresh. */
 export function createActivitySummaryAuthority({
@@ -26,13 +20,13 @@ export function createActivitySummaryAuthority({
   getConfig: () => OpenClawConfig;
   assertCurrent: () => void;
 }) {
-  const profileId = recapOperatorProfileId(getEntry());
-  let identity: Awaited<ReturnType<typeof prepareUserProfileIdentity>> | undefined;
+  const profileId = sessionPersonalProfileId(getEntry());
+  let catalog: Awaited<ReturnType<typeof prepareUserProfileCatalog>> | undefined;
   let authority: ReturnType<typeof captureChannelOperatorRunAuthority> | undefined;
   let active = true;
   const assertOwnerCurrent = () => {
     assertCurrent();
-    if (!active || recapOperatorProfileId(getEntry()) !== profileId) {
+    if (!active || sessionPersonalProfileId(getEntry()) !== profileId) {
       throw new Error("Activity recap operator ownership is no longer current");
     }
   };
@@ -47,29 +41,41 @@ export function createActivitySummaryAuthority({
       if (!profileId) {
         return undefined;
       }
-      const prepared = await prepareUserProfileIdentity(profileId);
-      identity = prepared;
+      const prepared = await prepareUserProfileCatalog();
+      catalog = prepared;
       assertOwnerCurrent();
-      const original = prepared.readCurrentProfile();
+      const original = prepared.readCurrentIdentity(profileId);
+      if (!original) {
+        throw new Error("Activity recap operator profile is unavailable");
+      }
+      const canonicalProfileId = original.profileId;
+      const assignedRole = original.role || null;
+      const githubLogin = original.githubLogin ?? null;
+      // Resolve historical aliases once; effect checks retain the same catalog
+      // and canonical identity without rebuilding the alias set.
+      const source = captureResidentUserProfileAccess(profileId);
       authority = captureChannelOperatorRunAuthority({
-        ...original,
+        profileId: canonicalProfileId,
+        assignedRole,
+        githubLogin,
         scopes: [],
         gatewayAccessGrant: null,
         getRuntimeConfig: getConfig,
         assertCurrent: () => {
           assertOwnerCurrent();
-          const profile = prepared.readCurrentProfile();
+          const profile = source.assertCurrent();
           if (
-            profile.assignedRole !== original.assignedRole ||
-            profile.githubLogin !== original.githubLogin
+            profile.id !== canonicalProfileId ||
+            (profile.role || null) !== assignedRole ||
+            (profile.githubLogin ?? null) !== githubLogin
           ) {
             throw new Error("Activity recap operator role changed");
           }
           const role = resolveOperatorRolePolicyForAssignment(
-            profileId,
-            profile.assignedRole,
+            canonicalProfileId,
+            assignedRole,
             getConfig(),
-            profile.githubLogin ?? null,
+            githubLogin,
           );
           if (role && role.agents !== "*" && !role.agents.includes(agentId)) {
             throw new Error("Activity recap operator role cannot access this agent");
@@ -81,7 +87,7 @@ export function createActivitySummaryAuthority({
     // The recap owner joins preparation and completion before releasing this lease.
     release(this: void) {
       active = false;
-      identity?.release();
+      catalog?.release();
     },
   };
 }

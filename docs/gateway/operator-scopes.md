@@ -338,12 +338,14 @@ model access, and shared-secret System access is unchanged.
 
 Activity recaps use the owning agent's utility route under the session's assigned
 human owner's model policy, or its authenticated profile creator's policy when
-there is no assigned owner. The Gateway checks committed policy before provider
+there is no assigned human owner. Historical profile aliases resolve to the current
+canonical profile before policy is bound. The Gateway checks committed policy before provider
 requests, including retries and fallbacks; denied or revoked work is skipped with
 a logged reason and retains the previous recap. Requesting a refresh still requires
 session write access and never substitutes the viewer's model permissions for the
-session owner's. Explicitly system/agent-owned sessions and sessions without a
-linked operator owner or creator retain Gateway service authority. Cron, subagent,
+session owner's. Assigning a task to an agent or the system does not remove its
+authenticated creator's policy. Sessions without an assigned human owner or
+authenticated profile creator retain Gateway service authority. Cron, subagent,
 and incognito sessions do not generate recaps. Disabling the owning agent's utility
 routing stops all its recap generation. See [Activity tab](/web/control-ui/settings#activity-tab).
 

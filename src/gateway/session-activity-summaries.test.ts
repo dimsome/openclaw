@@ -41,7 +41,10 @@ import {
   runOpenClawAgentWriteTransaction,
 } from "../state/openclaw-agent-db.js";
 import { SQLITE_SESSION_WRITER_QUEUES } from "../state/openclaw-agent-write-admission-state.js";
-import { ensureCanonicalUserProfileForEmail } from "../state/user-profile-writes.js";
+import {
+  ensureCanonicalUserProfileForEmail,
+  mergeCanonicalUserProfiles,
+} from "../state/user-profile-writes.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { requireNativeSqliteDatabase } from "../test-utils/native-sqlite.js";
 import type { OpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -261,10 +264,14 @@ describe("Activity recap lifecycle with the canonical session store", () => {
 
   it("stops an operator recap revoked during preparation and retains its cached result", async () => {
     const { profile, provider } = await operatorRecaps(["test/utility"]);
+    const alias = await ensureCanonicalUserProfileForEmail("recap-alias@example.test");
     await assignSessionOwnerInWorker(scope, {
       expectedSessionId: scope.sessionId,
-      owner: { type: "human", id: profile.id },
+      owner: { type: "human", id: alias.id },
+      assignedBy: { type: "system", id: "gateway" },
     });
+    await mergeCanonicalUserProfiles(alias.id, profile.id);
+    expect(read()?.owner?.actor.id).toBe(alias.id);
     await messages(2);
     const allowed = new AsyncWorkScope();
     await allowed.track(() => ensureRecap(target));
@@ -297,7 +304,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     expect(() => retainedAssertion?.()).toThrow();
   });
 
-  it("denies profile-created recaps while explicitly service-owned recaps still complete", async () => {
+  it("denies profile-created recaps after a nonhuman assignment while service recaps complete", async () => {
     const { profile, provider } = await operatorRecaps([]);
     const createdActor = { type: "human" as const, source: "profile" as const, id: profile.id };
     const operatorSession = makeConversation("agent:main:operator-recap", "operator-recap-session");
@@ -305,13 +312,21 @@ describe("Activity recap lifecycle with the canonical session store", () => {
       createdActor,
     });
     expect(read(operatorSession.scope)?.createdActor).toEqual(createdActor);
+    await assignSessionOwnerInWorker(operatorSession.scope, {
+      expectedSessionId: operatorSession.scope.sessionId,
+      owner: { type: "agent", id: "main" },
+      assignedBy: { type: "human", id: profile.id },
+    });
+    // A nonhuman assignee cannot erase the creator's operator model restriction.
+    expect(read(operatorSession.scope)?.owner?.actor.type).toBe("agent");
     const serviceSession = makeConversation("agent:main:service-recap", "service-recap-session");
     await seedConversation(serviceSession.scope, "Completed scheduled maintenance.", {
-      createdActor,
+      createdActor: { type: "system" },
     });
     await assignSessionOwnerInWorker(serviceSession.scope, {
       expectedSessionId: serviceSession.scope.sessionId,
       owner: { type: "system", id: "gateway" },
+      assignedBy: { type: "system", id: "gateway" },
     });
     const work = new AsyncWorkScope();
     await work.track(() =>
