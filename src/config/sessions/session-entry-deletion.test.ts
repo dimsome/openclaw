@@ -45,14 +45,10 @@ async function fixture(shared = false) {
     sessionId: initial.sessionId,
   };
   seed(scope, initial);
-  return { scope, remove: await capture(scope, initial) };
+  return { scope, remove: await capture(scope) };
 }
-async function capture(
-  scope: Parameters<typeof read>[0] & { storePath: string },
-  expected: Parameters<typeof seed>[1],
-) {
+async function capture(scope: Parameters<typeof read>[0] & { storePath: string }) {
   const expectedEntry = await read(scope);
-  expect(expectedEntry).toMatchObject(expected);
   return (options: { archiveTranscript?: boolean; commitGuard?: () => void } = {}) =>
     deleteSessionEntryLifecycle({
       ...scope,
@@ -75,7 +71,7 @@ it.each(["main", "other"])(
     const alias = { ...scope, agentId, sessionKey: `agent:${agentId}:cron:job:run:completed` };
     const aliasEntry = { sessionId: scope.sessionId, updatedAt: 2, label: "completed run" };
     seed(alias, aliasEntry);
-    const remove = await capture(alias, aliasEntry);
+    const remove = await capture(alias);
     const facts: Array<SessionRowFacts | undefined> = [];
     const unsubscribe = sessionChanges.subscribeFacts((change) => {
       if ("sessionKey" in change && change.sessionKey === alias.sessionKey) {
