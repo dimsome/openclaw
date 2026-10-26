@@ -111,7 +111,9 @@ it.each([true, false])("provisions without a TTY (compatible=%s)", async (compat
     .mockReturnValue(probeResult(compatible ? "26.12.1" : "24.19.0"));
   const installCommand = vi.fn(async () => 0);
   const result = await resolveUpdatedNodeRuntime(root, { ...targetRuntime, installCommand });
-  expect(installCommand).toHaveBeenCalledOnce();
+  expect(installCommand.mock.calls).toEqual([
+    [expect.any(String), expect.arrayContaining(["26.12.1"]), targetRuntime.env],
+  ]);
   expect(result).toBe(compatible ? candidate : null);
 });
 

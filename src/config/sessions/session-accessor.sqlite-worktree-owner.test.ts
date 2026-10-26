@@ -106,6 +106,7 @@ const ownerJson = JSON.stringify({ sessionId: "owner", updatedAt: 1 });
 it.each([
   ["unsettled row", ownerJson, undefined],
   ["malformed JSON", "{", undefined],
+  ["uncertified validity flag", ownerJson, 1],
   ["retained marker without a window", "{}", -1],
 ] as const)("refuses %s instead of authorizing cleanup", (_name, payload, validity) => {
   const { scope, database, update, read } = ownerFixture("owner", { updatedAt: 1 });

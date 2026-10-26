@@ -18,6 +18,18 @@ function modelConfig(
   return { agents: { defaults: { ...defaults, models: { [key]: { params } } } } };
 }
 
+it.each(["serviceTier", "service_tier"])("keeps %s inherited until a speed is selected", (key) => {
+  const cfg = modelConfig({ [key]: "ultrafast" }, "openai/speed-fixture");
+  const state = resolve({ cfg, provider: "openai", model: "speed-fixture" });
+  expect(state).toMatchObject({ mode: "ultrafast", source: "config" });
+  expect(state.requestMode).toBeUndefined();
+  for (const mode of [false, true, "ultrafast"] as const) {
+    expect(
+      resolve({ cfg, model: "speed-fixture", sessionEntry: { fastMode: mode } }),
+    ).toMatchObject({ mode, requestMode: mode, source: "session" });
+  }
+});
+
 it.each([
   [true, false, "auto", undefined, true, "session"],
   ["auto", undefined, undefined, undefined, "auto", "session"],

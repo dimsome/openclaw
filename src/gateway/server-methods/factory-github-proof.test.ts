@@ -79,7 +79,15 @@ async function rpc(
 
 it("redeems once through the registered direct private method", async () => {
   const issued = issue();
-  expect(await rpc(issued.proof)).toMatchObject([true, { actorId: 101 }]);
+  expect(await rpc(issued.proof)).toMatchObject([
+    true,
+    {
+      ...claim,
+      actorId: 101,
+      actorPrincipal: "github:example.ghe.com:101",
+      profileId: "person-1",
+    },
+  ]);
   expectForbidden(await rpc(issued.proof));
 });
 

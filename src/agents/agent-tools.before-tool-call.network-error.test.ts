@@ -65,13 +65,17 @@ it("blocks after twenty identical protected network failures", async () => {
     runId: "network-error-loop",
     loopDetection: { enabled: true },
   });
-  const failures = new Set<string>();
+  const markerIds = new Set<string>();
   for (let index = 0; index < 20; index++) {
     const error = await failure(tool, `network-loop-${index}`);
-    expect(error.message).toContain("EXTERNAL_UNTRUSTED_CONTENT");
-    failures.add(error.message);
+    const matches = [...error.message.matchAll(/EXTERNAL_UNTRUSTED_CONTENT id="([a-f0-9]{16})"/g)];
+    expect(matches).toHaveLength(2);
+    const markerId = matches[0]?.[1];
+    assert.isDefined(markerId, "Expected a generated external-content marker");
+    expect(markerId).toBe(matches[1]?.[1]);
+    markerIds.add(markerId);
   }
-  expect(failures.size).toBe(20);
+  expect(markerIds.size).toBe(20);
   expect((await tool.execute("network-loop-blocked", {})).details).toMatchObject({
     status: "blocked",
     deniedReason: "tool-loop",
