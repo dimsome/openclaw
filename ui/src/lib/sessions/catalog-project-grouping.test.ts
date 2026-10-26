@@ -108,12 +108,5 @@ describe("groupCatalogSessionsByPerson", () => {
 });
 
 function session(threadId: string, cwd?: string): SessionCatalogSession {
-  return {
-    threadId,
-    cwd,
-    status: "idle",
-    archived: false,
-    canContinue: true,
-    canArchive: true,
-  };
+  return { threadId, cwd, status: "idle", archived: false, canContinue: true, canArchive: true };
 }

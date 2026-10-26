@@ -59,11 +59,7 @@ describe("session unread mutation capability", () => {
 
     await sessions.patch(key, { unread: false }, { ...expected, deferListRefresh: true });
 
-    expect(request).toHaveBeenCalledWith("sessions.patch", {
-      key,
-      unread: false,
-      ...expected,
-    });
+    expect(request).toHaveBeenCalledWith("sessions.patch", { key, unread: false, ...expected });
   });
 
   it("clears unread before the request settles and rolls a rejection back", async () => {

@@ -1,24 +1,17 @@
 // @vitest-environment node
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
-import { describe, expect, it, onTestFinished, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SessionsListResult } from "../../api/types.ts";
 import {
   createGatewayRequestMock,
   createTestGatewayClient,
 } from "../../test-helpers/gateway-client.ts";
-import {
-  createSessionCapabilityHarness,
-  sessionsResult,
-} from "./session-capability.test-support.ts";
+import { sessionsResult } from "./session-capability.test-support.ts";
 import type { SessionCapability } from "./session-capability.ts";
+import { rosterFixture } from "./session-roster-refresh.test-support.ts";
 
-const makeRow = (id: string, label: string) => ({
-  key: `agent:main:${id}`,
-  sessionId: id,
-  kind: "direct" as const,
-  label,
-  updatedAt: 1,
-});
+const makeRow = (id: string, label: string) =>
+  ({ key: `agent:main:${id}`, sessionId: id, kind: "direct", label, updatedAt: 1 }) as const;
 type Row = ReturnType<typeof makeRow>;
 const makeQuery = (limit: number) => ({ agentId: "main", search: "Shared", limit });
 const changed = (row: Row, reason: string, label: string, updatedAt = 1) => ({
@@ -40,16 +33,10 @@ function makeHarness(result: (params?: unknown) => SessionsListResult) {
     return result(params);
   });
   const client = createTestGatewayClient(request);
-  const harness = createSessionCapabilityHarness(client.request.bind(client));
-  const cleanup: Array<() => void> = [];
-  onTestFinished(() => {
-    cleanup.forEach((dispose) => dispose());
-    harness.sessions.dispose();
-    vi.useRealTimers();
-  });
+  const harness = rosterFixture(client.request.bind(client));
   const subscribe = (...args: Parameters<SessionCapability["subscribeList"]>) =>
-    cleanup.push(harness.sessions.subscribeList(...args));
-  return { ...harness, request, subscribe, cleanup };
+    harness.watch(harness.sessions.subscribeList(...args));
+  return { ...harness, request, subscribe };
 }
 
 describe("event-driven session list refresh", () => {
@@ -57,7 +44,7 @@ describe("event-driven session list refresh", () => {
     const rows = Array.from({ length: 10 }, (_, index) =>
       makeRow(`shared-${index}`, `Shared ${index}`),
     );
-    const { sessions, emitEvent, request, subscribe, cleanup } = makeHarness(() =>
+    const { sessions, emitEvent, request, subscribe, watch } = makeHarness(() =>
       sessionsResult(structuredClone(rows), 1),
     );
     const queries = Array.from({ length: 8 }, (_, index) => makeQuery(10 + index));
@@ -82,7 +69,7 @@ describe("event-driven session list refresh", () => {
     descriptor = sessions.observeRow({ key: target.key, agentId: "main" }, observed, {
       onEvent: eventDelivered,
     });
-    cleanup.unshift(() => descriptor?.dispose());
+    watch(() => descriptor?.dispose());
     observed.mockClear();
     const event = changed(target, "update", "Shared updated", 2);
     const held = heldResults();

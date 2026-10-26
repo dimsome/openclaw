@@ -96,11 +96,7 @@ it.each([
   ["excludeSystem", "system:maintenance"],
 ] as const)("keeps list and subscription membership scoped for %s", async (flag, excludedKey) => {
   const ordinary = row("ordinary", { agentId: "main" });
-  const excluded: GatewaySessionRow = {
-    ...ordinary,
-    key: `agent:main:${excludedKey}`,
-    sessionId: "excluded-session",
-  };
+  const excluded = { ...ordinary, key: `agent:main:${excludedKey}`, sessionId: "excluded-session" };
   let primaryRows = [ordinary, excluded];
   let issued = 0;
   const request = vi.fn(async (method: string, params?: unknown) => {

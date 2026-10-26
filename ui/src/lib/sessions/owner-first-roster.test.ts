@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import { sessionRequest } from "./hydration-family.test-support.ts";
 import {
   createSessionCapabilityHarness,
   sessionChangedEvent,
@@ -21,12 +22,7 @@ afterEach(() => vi.useRealTimers());
 function harness(
   handler: (params?: { limit?: number; offset?: number; ownerFirst?: boolean }) => unknown,
 ) {
-  const request = vi.fn(async (method: string, params?: Parameters<typeof handler>[0]) => {
-    if (method !== "sessions.list") {
-      throw new Error(`Unexpected request: ${method}`);
-    }
-    return handler(params);
-  });
+  const request = sessionRequest({ "sessions.list": handler });
   return {
     request,
     ...createSessionCapabilityHarness(request as unknown as GatewayBrowserClient["request"], {
