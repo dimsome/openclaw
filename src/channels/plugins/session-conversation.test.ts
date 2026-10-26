@@ -22,6 +22,10 @@ const inherited = {
   __proto__: { parentConversationCandidates: ["topic", "room"] },
 };
 const telegramTopicKey = "agent:main:telegram:group:-100123:topic:77";
+const withParents = (parents: string[] | undefined) => ({
+  ...canonical,
+  parentConversationCandidates: parents,
+});
 
 function conversation(channel: string, kind: "group" | "channel", rawId: string, id = rawId) {
   return {
@@ -80,32 +84,18 @@ describe("session conversation routing", () => {
 
   it.each([
     ["legacy-only parents", null, ["room"], ["room"], "room", 1],
+    ["explicit empty parents", withParents([]), ["legacy"], [], "base", 0],
+    ["explicit undefined parents", withParents(undefined), ["legacy"], [], "base", 0],
     [
-      "explicit empty parents",
-      { ...canonical, parentConversationCandidates: [] },
-      ["legacy"],
-      [],
-      "base",
-      0,
-    ],
-    [
-      "explicit undefined parents",
-      { ...canonical, parentConversationCandidates: undefined },
-      ["legacy"],
-      [],
-      "base",
-      0,
-    ],
-    [
-      "explicit ordered parents before legacy and base",
-      { ...canonical, parentConversationCandidates: untrimmedParents },
+      "explicit ordered parents",
+      withParents(untrimmedParents),
       ["legacy"],
       orderedParents,
       "room",
       0,
     ],
     [
-      "omitted parents use the legacy result",
+      "omitted parents use legacy",
       { id: canonical.id },
       untrimmedParents,
       orderedParents,

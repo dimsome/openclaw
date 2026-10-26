@@ -21,9 +21,9 @@ const restrictSenders = {
   groupAllowFromPath: "channels.example.groupAllowFrom",
 };
 const configureRouteAllowlist = {
+  ...restrictSenders,
   surface: "Example channels",
   openScope: "any channel not explicitly denied",
-  groupPolicyPath: "channels.example.groupPolicy",
   routeAllowlistPath: "channels.example.channels",
 };
 const missingRouteAllowlist = {
@@ -42,18 +42,11 @@ type PolicyAccount = {
   channels?: Record<string, unknown>;
 };
 const routeWarnings = {
-  restrictSenders: {
-    surface: "Example groups",
-    openScope: "any member in allowed groups",
-    groupPolicyPath: "channels.example.groupPolicy",
-    groupAllowFromPath: "channels.example.groupAllowFrom",
-  },
+  restrictSenders: { ...restrictSenders, openScope: "any member in allowed groups" },
   noRouteAllowlist: {
-    surface: "Example groups",
+    ...restrictSenders,
     routeAllowlistPath: "channels.example.groups",
     routeScope: "group",
-    groupPolicyPath: "channels.example.groupPolicy",
-    groupAllowFromPath: "channels.example.groupAllowFrom",
   },
 };
 const openAccount = { groupPolicy: "open" } as const;

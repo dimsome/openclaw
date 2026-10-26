@@ -1,5 +1,5 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/io.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import {
@@ -77,73 +77,62 @@ function enableThreadedFallback() {
   });
 }
 
-describe("session conversation bundled fallback", () => {
-  beforeEach(() => {
-    fallbackState.activeDirName = null;
-    fallbackState.loadCalls = 0;
-    fallbackState.resolveSessionConversation = null;
-    resetPluginRuntimeStateForTest();
-  });
+beforeEach(() => {
+  fallbackState.activeDirName = null;
+  fallbackState.loadCalls = 0;
+  fallbackState.resolveSessionConversation = null;
+  resetPluginRuntimeStateForTest();
+});
 
-  afterEach(() => {
-    clearRuntimeConfigSnapshot();
-  });
+afterEach(clearRuntimeConfigSnapshot);
 
-  it("delegates pre-bootstrap thread parsing to the active bundled channel plugin", () => {
-    enableThreadedFallback();
+it("delegates pre-bootstrap thread parsing on repeated calls to the public-surface loader", () => {
+  enableThreadedFallback();
 
-    expect(resolveSessionConversationRef(sessionKey)).toEqual(
-      conversationRef("room:topic:42", "room", "42", ["room"]),
-    );
-  });
+  expect(resolveSessionConversationRef(sessionKey)).toEqual(
+    conversationRef("room:topic:42", "room", "42", ["room"]),
+  );
+  expect(resolveSessionConversationRef("agent:main:mock-threaded:group:room:topic:43")).toEqual(
+    conversationRef("room:topic:43", "room", "43", ["room"]),
+  );
+  expect(fallbackState.loadCalls).toBe(2);
+});
 
-  it("keeps a loaded plugin without messaging on generic thread grammar", () => {
-    enableThreadedFallback();
-    setActivePluginRegistry(
-      createTestRegistry([
-        {
-          pluginId: "mock-threaded",
-          source: "test",
-          plugin: createChannelTestPluginBase({ id: "mock-threaded" }),
-        },
-      ]),
-    );
+it("keeps a loaded plugin without messaging on generic thread grammar", () => {
+  enableThreadedFallback();
+  setActivePluginRegistry(
+    createTestRegistry([
+      {
+        pluginId: "mock-threaded",
+        source: "test",
+        plugin: createChannelTestPluginBase({ id: "mock-threaded" }),
+      },
+    ]),
+  );
 
-    expect(resolveSessionConversationRef(`${sessionKey}:thread:leaf`)).toEqual(
-      conversationRef("room:topic:42:thread:leaf", "room:topic:42", "leaf", ["room:topic:42"]),
-    );
-    expect(fallbackState.loadCalls).toBe(0);
-  });
+  expect(resolveSessionConversationRef(`${sessionKey}:thread:leaf`)).toEqual(
+    conversationRef("room:topic:42:thread:leaf", "room:topic:42", "leaf", ["room:topic:42"]),
+  );
+  expect(fallbackState.loadCalls).toBe(0);
+});
 
-  it("can skip bundled fallback probing for hot generic-only callers", () => {
-    enableThreadedFallback();
+it("can skip bundled fallback probing for hot generic-only callers", () => {
+  enableThreadedFallback();
 
-    expect(resolveSessionConversationRef(sessionKey, { bundledFallback: false })).toEqual(
-      conversationRef("room:topic:42", "room:topic:42", undefined, []),
-    );
-  });
+  expect(resolveSessionConversationRef(sessionKey, { bundledFallback: false })).toEqual(
+    conversationRef("room:topic:42", "room:topic:42", undefined, []),
+  );
+});
 
-  it("uses explicit bundled parent candidates before registry bootstrap", () => {
-    const inputId = "room:topic:root:sender:user";
-    enableBundledFallback("mock-parent", ({ rawId }) => ({
-      id: rawId,
-      baseConversationId: "room",
-      parentConversationCandidates: ["room:topic:root", "room"],
-    }));
+it("uses explicit bundled parent candidates before registry bootstrap", () => {
+  const inputId = "room:topic:root:sender:user";
+  enableBundledFallback("mock-parent", ({ rawId }) => ({
+    id: rawId,
+    baseConversationId: "room",
+    parentConversationCandidates: ["room:topic:root", "room"],
+  }));
 
-    expect(resolveSessionConversationRef(`agent:main:mock-parent:group:${inputId}`)).toEqual(
-      conversationRef(inputId, inputId, undefined, ["room:topic:root", "room"], "mock-parent"),
-    );
-  });
-
-  it("delegates repeated fallback calls through the public-surface loader", () => {
-    enableThreadedFallback();
-
-    const firstRef = resolveSessionConversationRef(sessionKey);
-    expect(firstRef).toMatchObject({ channel: "mock-threaded", id: "room", threadId: "42" });
-
-    const secondRef = resolveSessionConversationRef("agent:main:mock-threaded:group:room:topic:43");
-    expect(secondRef).toMatchObject({ channel: "mock-threaded", id: "room", threadId: "43" });
-    expect(fallbackState.loadCalls).toBe(2);
-  });
+  expect(resolveSessionConversationRef(`agent:main:mock-parent:group:${inputId}`)).toEqual(
+    conversationRef(inputId, inputId, undefined, ["room:topic:root", "room"], "mock-parent"),
+  );
 });

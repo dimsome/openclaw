@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/session-key.js";
@@ -47,89 +47,78 @@ it("patchScopedAccountConfig clears only default-account credentials before repl
   });
 });
 
-describe("createPatchedAccountSetupAdapter", () => {
-  const tokenAdapter = createPatchedAccountSetupAdapter({
+it("migrates base name into the default account before patching a named account", () => {
+  const next = createPatchedAccountSetupAdapter({
     channelKey: "demo-setup",
     buildPatch: (input) => ({ botToken: input.token }),
+  }).applyAccountConfig({
+    cfg: config("demo-setup", { name: "Personal", accounts: { work: { botToken: "old" } } }),
+    accountId: "Work Team",
+    input: { name: "Work", token: "new" },
   });
 
-  it("migrates base name into the default account before patching a named account", () => {
-    const next = tokenAdapter.applyAccountConfig({
-      cfg: config("demo-setup", { name: "Personal", accounts: { work: { botToken: "old" } } }),
-      accountId: "Work Team",
-      input: { name: "Work", token: "new" },
-    });
-
-    expect(next.channels?.["demo-setup"]).toMatchObject({
-      accounts: {
-        default: { name: "Personal" },
-        work: { botToken: "old" },
-        "work-team": { enabled: true, name: "Work", botToken: "new" },
-      },
-    });
-    expect(next.channels?.["demo-setup"]).not.toHaveProperty("name");
-  });
-
-  it("can store the default account in accounts.default", () => {
-    const adapter = createPatchedAccountSetupAdapter({
-      channelKey: "demo-accounts",
-      alwaysUseAccounts: true,
-      buildPatch: (input) => ({ authDir: input.authDir }),
-    });
-
-    const next = adapter.applyAccountConfig({
-      cfg: config("demo-accounts", {}),
-      accountId: DEFAULT_ACCOUNT_ID,
-      input: { name: "Phone", authDir: "/tmp/auth" },
-    });
-
-    expect(next.channels?.["demo-accounts"]).toMatchObject({
-      accounts: { default: { enabled: true, name: "Phone", authDir: "/tmp/auth" } },
-    });
-    expect(next.channels?.["demo-accounts"]).not.toHaveProperty("enabled");
-    expect(next.channels?.["demo-accounts"]).not.toHaveProperty("authDir");
+  expect(next.channels?.["demo-setup"]).toEqual({
+    enabled: true,
+    accounts: {
+      default: { name: "Personal" },
+      work: { botToken: "old" },
+      "work-team": { enabled: true, name: "Work", botToken: "new" },
+    },
   });
 });
 
-describe("moveSingleAccountChannelSectionToDefaultAccount", () => {
-  it("does not add a default when an ordinary named account already exists and no keys move", () => {
-    const cfg = asConfig({ channels: { demo: { enabled: true, accounts: { ada: {} } } } });
-    expect(moveSingleAccountChannelSectionToDefaultAccount({ cfg, channelKey: "demo" })).toBe(cfg);
+it("can store the default account in accounts.default", () => {
+  const next = createPatchedAccountSetupAdapter({
+    channelKey: "demo-accounts",
+    alwaysUseAccounts: true,
+    buildPatch: (input) => ({ authDir: input.authDir }),
+  }).applyAccountConfig({
+    cfg: config("demo-accounts", {}),
+    accountId: DEFAULT_ACCOUNT_ID,
+    input: { name: "Phone", authDir: "/tmp/auth" },
   });
 
-  it("promotes legacy Matrix keys into the sole named account when defaultAccount is unset", () => {
-    const credentials = {
-      homeserver: "https://matrix.example.org",
-      userId: "@bot:example.org",
-      accessToken: "token",
-    };
-    const next = moveSingleAccountChannelSectionToDefaultAccount({
-      cfg: config("matrix", { ...credentials, accounts: { main: { enabled: true } } }),
-      channelKey: "matrix",
-      setupSurface: {
-        applyAccountConfig: ({ cfg }) => cfg,
-        singleAccountKeysToMove: ["homeserver", "userId", "accessToken"],
-        namedAccountPromotionKeys: ["accessToken", "homeserver", "userId"],
-        resolveSingleAccountPromotionTarget: () => "main",
-      },
-    });
-    expect(next.channels?.matrix).toEqual({
-      accounts: { main: { enabled: true, ...credentials } },
-    });
+  expect(next.channels?.["demo-accounts"]).toEqual({
+    accounts: { default: { enabled: true, name: "Phone", authDir: "/tmp/auth" } },
+  });
+});
+
+it("does not add a default when an ordinary named account already exists and no keys move", () => {
+  const cfg = config("demo", { enabled: true, accounts: { ada: {} } });
+  expect(moveSingleAccountChannelSectionToDefaultAccount({ cfg, channelKey: "demo" })).toBe(cfg);
+});
+
+it("promotes legacy Matrix keys into the sole named account when defaultAccount is unset", () => {
+  const credentials = {
+    homeserver: "https://matrix.example.org",
+    userId: "@bot:example.org",
+    accessToken: "token",
+  };
+  const next = moveSingleAccountChannelSectionToDefaultAccount({
+    cfg: config("matrix", { ...credentials, accounts: { main: { enabled: true } } }),
+    channelKey: "matrix",
+    setupSurface: {
+      applyAccountConfig: ({ cfg }) => cfg,
+      singleAccountKeysToMove: ["homeserver", "userId", "accessToken"],
+      namedAccountPromotionKeys: ["accessToken", "homeserver", "userId"],
+      resolveSingleAccountPromotionTarget: () => "main",
+    },
+  });
+  expect(next.channels?.matrix).toEqual({
+    accounts: { main: { enabled: true, ...credentials } },
+  });
+});
+
+it("preserves explicit named-account values over promoted root defaults", () => {
+  const next = moveSingleAccountChannelSectionToDefaultAccount({
+    cfg: config("zalouser", {
+      dmPolicy: "disabled",
+      accounts: { work: { dmPolicy: "allowlist" } },
+    }),
+    channelKey: "zalouser",
   });
 
-  it("preserves explicit named-account values over promoted root defaults", () => {
-    const next = moveSingleAccountChannelSectionToDefaultAccount({
-      cfg: config("zalouser", {
-        dmPolicy: "disabled",
-        accounts: { work: { dmPolicy: "allowlist" } },
-      }),
-      channelKey: "zalouser",
-    });
-
-    expect(next.channels?.zalouser?.accounts?.work?.dmPolicy).toBe("allowlist");
-    expect(next.channels?.zalouser?.dmPolicy).toBeUndefined();
-  });
+  expect(next.channels?.zalouser).toEqual({ accounts: { work: { dmPolicy: "allowlist" } } });
 });
 
 it("createEnvPatchedAccountSetupAdapter rejects named-account env mode and requires credentials", () => {
