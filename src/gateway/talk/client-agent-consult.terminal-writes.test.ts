@@ -7,6 +7,7 @@ import { loadSessionEntry, replaceSessionEntry } from "../../config/sessions/ses
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import * as terminal from "../../infra/agent-run-terminal-writes.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { getGatewayContextResolver } from "../../plugins/runtime/gateway-context-binding.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
@@ -65,6 +66,7 @@ it("keeps browser Talk consults idle-fresh through accepted user-turn storage", 
 });
 
 it.each([false, true])("drains writes; abort revokes authority (%s)", async (abort) => {
+  const resolveGatewayContext = () => undefined;
   const commit = createDeferred();
   const captured = createDeferred<{
     admitted: runs.AdmittedRunContext;
@@ -73,6 +75,7 @@ it.each([false, true])("drains writes; abort revokes authority (%s)", async (abo
   }>();
   core.mockImplementation(async (params) => {
     const admitted = await runs.resolvePreparedRunAdmission({ ...params, runtimeKind: "embedded" });
+    expect(getGatewayContextResolver(admitted)).toBe(resolveGatewayContext);
     const writeContext = terminal.captureAgentRunTerminalPersistence(params.runId).writeContext;
     assert(writeContext);
     const persistence = commit.promise.then(() =>
@@ -88,7 +91,10 @@ it.each([false, true])("drains writes; abort revokes authority (%s)", async (abo
   const controller = new AbortController();
   const runner = createConsultRunner({
     config,
-    context: { logGateway: createSubsystemLogger("test/talk-terminal-writes") },
+    context: {
+      logGateway: createSubsystemLogger("test/talk-terminal-writes"),
+      resolveGatewayContext,
+    },
     sessionTarget: await prepareTalkSessionTarget(config, `agent:main:talk-terminal-${abort}`),
   });
   const settled = vi.fn();
