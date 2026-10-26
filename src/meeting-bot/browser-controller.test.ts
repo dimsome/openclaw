@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openMeetingWithBrowser, recoverMeetingBrowserTab } from "./browser-controller.js";
 import { isMeetingBrowserTransientNavigationError } from "./browser-navigation-errors.js";
+import { TEST_MEETING_PLATFORM_ADAPTER } from "./observation-provenance.test-support.js";
 import type { MeetingBrowserRequestCaller } from "./platform-adapter-contract.js";
 
 beforeEach(() => vi.useFakeTimers());
@@ -13,34 +14,22 @@ function createBrowser(onFirstEvaluation: () => void) {
   const timeouts: number[] = [];
   const state = { evaluations: 0, adoption, captions: captureCaptions, timeouts };
   const adapter: Parameters<typeof openMeetingWithBrowser>[0]["adapter"] = {
-    browserLabel: "Test meeting",
+    ...TEST_MEETING_PLATFORM_ADAPTER,
     urls: {
-      accountHint: () => undefined,
+      ...TEST_MEETING_PLATFORM_ADAPTER.urls,
       buildJoinUrl: (session) => session.url,
-      isPreferredJoinUrl: () => true,
-      isRecoverableTab: () => true,
       isSameMeeting: () => true,
-      localeAction: () => undefined,
       normalizeForReuse: () => "test-meeting",
-      validateAndNormalize: (input) => String(input),
     },
     browser: {
+      ...TEST_MEETING_PLATFORM_ADAPTER.browser,
       allowsMicrophone: () => false,
-      browserControlUnavailable: () => ({
-        category: "browser-control-unavailable",
-        reason: "browser-unavailable",
-        message: "Browser unavailable.",
-      }),
-      buildLeaveScript: () => "",
       captions: {
-        buildTranscriptScript: () => "",
+        ...TEST_MEETING_PLATFORM_ADAPTER.browser.captions,
         enabled: () => false,
-        parseTranscript: () => ({ droppedLines: 0, lines: [] }),
       },
       classifyManualAction: () => undefined,
-      parseLeaveResult: () => ({ departed: false }),
       parseStatus: () => ({ status: "browser-control", inCall: true }),
-      permissions: () => undefined,
       permissionNotes: () => [],
       buildStatusJoinScript: (params) => {
         state.adoption.push(params.allowSessionAdoption);

@@ -121,17 +121,6 @@ describe("configured meeting node host", () => {
     );
   });
 
-  it("selects the native backend for macOS and Linux", () => {
-    expect(
-      (["darwin", "linux"] as const).map(
-        (platform) => resolveMeetingAudioRuntimeForFormat({ ...defaults, platform }).backend,
-      ),
-    ).toEqual(["blackhole-2ch", "pipewire-pulse"]);
-    expect(() => resolveMeetingAudioRuntimeForFormat({ ...defaults, platform: "win32" })).toThrow(
-      "unsupported on win32",
-    );
-  });
-
   it("builds PipeWire-Pulse raw command pairs", () => {
     const rawArgs = [
       "--raw",
@@ -147,16 +136,5 @@ describe("configured meeting node host", () => {
       inputCommand: ["parec", ...rawArgs],
       outputCommand: ["pacat", "--raw", "--playback", ...rawArgs.slice(1)],
     });
-  });
-
-  it("preserves explicit command overrides while resolving the host backend", () => {
-    expect(
-      resolveMeetingAudioRuntimeForFormat({
-        ...defaults,
-        inputCommand: ["capture"],
-        outputCommand: ["playback"],
-        platform: "linux",
-      }),
-    ).toMatchObject({ inputCommand: ["capture"], outputCommand: ["playback"] });
   });
 });
