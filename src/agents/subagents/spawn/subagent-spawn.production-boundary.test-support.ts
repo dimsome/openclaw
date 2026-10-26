@@ -71,7 +71,6 @@ import { createSessionsSpawnTool } from "../../tools/sessions-spawn-tool.js";
 import { subagentRuns } from "../registry/subagent-registry-memory.js";
 import { writeSubagentSessionEntry } from "../registry/subagent-registry.persistence.test-support.js";
 import { enqueueSwarmRun } from "../swarm/swarm-scheduler.js";
-import { visibleResult } from "./subagent-spawn.fixtures.test-support.js";
 import { readBoundExecutionState } from "./subagent-spawn.production-boundary.diagnostics.test-support.js";
 import { testing as spawnTesting } from "./subagent-spawn.test-support.js";
 
@@ -661,7 +660,13 @@ export async function runTalkSpawnBoundaryCase(
       }
       expect(dispatches).toBe(1);
       expect(replacementFacade).not.toHaveBeenCalled();
-      return visibleResult("Talk consult complete");
+      return {
+        payloads: [{ text: "Talk consult complete" }],
+        meta: {
+          durationMs: 1,
+          terminalReply: { disposition: "visible", text: "Talk consult complete" },
+        },
+      };
     } catch (error) {
       if (params.sessionKey !== parentSessionKey) {
         childStarted.reject(error);
@@ -686,7 +691,13 @@ export async function runTalkSpawnBoundaryCase(
   } catch (error) {
     failures.push(error);
   } finally {
-    modelResult.resolve(visibleResult("Talk child complete"));
+    modelResult.resolve({
+      payloads: [{ text: "Talk child complete" }],
+      meta: {
+        durationMs: 1,
+        terminalReply: { disposition: "visible", text: "Talk child complete" },
+      },
+    });
     spawnTesting.setDepsForTest();
     bound.gatewayBinding.current = context;
     createFacade.mockRestore();
