@@ -10,7 +10,9 @@ import { refreshChatModelAuthStatus } from "./chat-state-refresh.ts";
 import { createSessionEventState } from "./chat-state.test-support.ts";
 
 it("refreshes the open usage popover after a terminal event without idle polling", async () => {
-  onTestFinished(() => vi.useRealTimers());
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
   const key = "agent:main:plan-usage";
   let usedPercent = 1;
   const auth = vi.fn((): ModelAuthStatusResult => ({
@@ -83,7 +85,9 @@ it.each(["failure", "session"] as const)(
       connected: true,
       modelAuthStatusResult: current,
     });
-    onTestFinished(() => vi.restoreAllMocks());
+    onTestFinished(() => {
+      vi.restoreAllMocks();
+    });
     const pending = refreshChatModelAuthStatus(state, "retiring-run");
     if (retirement === "failure") {
       response.reject(new Error("Usage refresh failed"));

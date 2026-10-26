@@ -60,7 +60,7 @@ function publishPlugin(matches = true) {
 const resolveRecord = (cfg: OpenClawConfig) =>
   bindingRegistry.resolveConfiguredBindingRecord({ cfg, ...conversation });
 beforeEach(() => setActivePluginRegistry(createEmptyPluginRegistry()));
-afterEach(clearActivePluginRegistry);
+afterEach(() => clearActivePluginRegistry());
 
 it("resolves wildcard session keys from compiled bindings", () => {
   publishPlugin();

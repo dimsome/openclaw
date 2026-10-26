@@ -5,6 +5,7 @@ import { buildAgentRunTerminalOutcome } from "../../agents/agent-run-terminal-ou
 import { rotateAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { bindUserTurnTranscriptAnnotation } from "../../sessions/user-turn-transcript-annotation.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
+import type { PersistedUserTurnMessage } from "../../sessions/user-turn-transcript.types.js";
 import { closeOpenClawAgentDatabasesAsync } from "../../state/openclaw-agent-db.js";
 import {
   loadSessionEntry,
@@ -19,15 +20,16 @@ import {
 import { useTempSessionsFixture } from "./test-helpers.js";
 
 const fixture = useTempSessionsFixture("pending-input-mirror-replay-");
-let receipt: SessionPendingInputReceipt | undefined;
+const receipts: SessionPendingInputReceipt[] = [];
 afterEach(async () => {
-  receipt?.finish("interrupted");
-  await receipt?.settled?.();
-  receipt = undefined;
+  for (const receipt of receipts.splice(0)) {
+    receipt.finish("interrupted");
+    await receipt.settled?.();
+  }
   await closeOpenClawAgentDatabasesAsync();
 });
 
-it("replays a committed native prompt without duplicating the mirrored input", async () => {
+async function commitMirroredInput() {
   const runId = "announce:settle-workers";
   const scope = {
     agentId: "main",
@@ -82,17 +84,28 @@ it("replays a committed native prompt without duplicating the mirrored input", a
   recorder.finishPendingInput?.("interrupted");
   await closeOpenClawAgentDatabasesAsync();
   rotateAgentEventLifecycleGeneration();
-  receipt = await stageSessionPendingInput(scope, {
-    runId,
-    message: {
-      ...original,
-      provenance: { ...original.provenance, kind: "inter_session", sourceSessionKey: "worker-a" },
-    },
-    trackCompletion: true,
-    replaySourceSessionKeys: ["worker-a", "worker-b"],
-    assertCurrent: () => {},
+  const replay = async (message: PersistedUserTurnMessage = original) => {
+    const receipt = await stageSessionPendingInput(scope, {
+      runId,
+      message,
+      trackCompletion: true,
+      replaySourceSessionKeys: ["worker-a", "worker-b"],
+      assertCurrent: () => {},
+    });
+    if (receipt) {
+      receipts.push(receipt);
+    }
+    return expectDefined(receipt, "replayed input");
+  };
+  return { scope, original, committed, transcript, replay };
+}
+
+it("replays a committed native prompt without duplicating the mirrored input", async () => {
+  const { scope, original, committed, transcript, replay } = await commitMirroredInput();
+  const receipt = await replay({
+    ...original,
+    provenance: { ...original.provenance, kind: "inter_session", sourceSessionKey: "worker-a" },
   });
-  receipt = expectDefined(receipt, "replayed input");
   expect(receipt.state).toBe("queued");
   expect(receipt.message).toEqual(committed);
   const readForeign = await prepareForeignLiveSessionPendingInputEntries(scope);

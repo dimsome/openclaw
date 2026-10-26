@@ -19,7 +19,11 @@ vi.mock("../session-utils.js", () => ({
 }));
 
 function roleConfig(agents: GatewayOperatorRoleDefinition["agents"]): OpenClawConfig {
-  const reader = { sessions: { others: "none" as const }, agents, scopes: ["operator.read"] };
+  const reader: GatewayOperatorRoleDefinition = {
+    sessions: { others: "none" },
+    agents,
+    scopes: ["operator.read"],
+  };
   return {
     agents: { ownership: "explicit", entries: { ops: {}, research: {} } },
     gateway: { roles: { definitions: { reader } } },

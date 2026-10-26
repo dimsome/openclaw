@@ -80,7 +80,9 @@ it("reconnects affected nodes when plugins attach after their handshake", async 
   await using cleanup = new AsyncDisposableStack();
   cleanup.defer(() => state.cleanup());
   cleanup.defer(() => restoreActivePluginRegistrySnapshot(previousRegistry));
-  cleanup.defer(() => vi.restoreAllMocks());
+  cleanup.defer(() => {
+    vi.restoreAllMocks();
+  });
   cleanup.defer(() => server?.close());
   cleanup.defer(() => kernel?.clients.clear());
   let databaseReady = false;
