@@ -89,28 +89,23 @@ describe("hydrateDiscordMessageIfNeeded", () => {
     });
   });
 
-  it("fetches empty bot reply context from its referenced channel", async () => {
-    const text = "Release repair: https://github.com/example/project/pull/42";
-    const { rest, hydrate } = fixture(
-      reply({
+  it.each([
+    {
+      name: "empty bot reply from its referenced channel",
+      raw: reply({
         referenced_message: referenced(""),
         message_reference: reference(MessageReferenceType.Default, "c2"),
         content: "<@bot> ok do it",
         mentions: [{ id: "bot", username: "openclaw" }],
       }),
-      [referenced(text)],
-    );
+      channel: "c2",
+    },
+    { name: "mismatched nested reply", raw: staleReply(), channel: "c1" },
+  ])("fetches canonical context for $name", async ({ raw, channel }) => {
+    const text = "Release repair: https://github.com/example/project/pull/42";
+    const { rest, hydrate } = fixture(raw, [referenced(text)]);
     const { message } = await hydrate();
-    expect(rest.calls.map((call) => call.path)).toEqual(["/channels/c2/messages/1000"]);
-    expect(message.referencedMessage?.content).toBe(text);
-    expect(await context(message)).toMatchObject({ ReplyToId: "1000", ReplyToBody: text });
-  });
-
-  it("replaces a mismatched nested reply with the canonical referenced message", async () => {
-    const text = "the canonical reply target";
-    const { rest, hydrate } = fixture(staleReply(), [referenced(text)]);
-    const { message } = await hydrate();
-    expect(rest.calls.map((call) => call.path)).toEqual(["/channels/c1/messages/1000"]);
+    expect(rest.calls.map((call) => call.path)).toEqual([`/channels/${channel}/messages/1000`]);
     expect(message.referencedMessage).toMatchObject({ id: "1000", content: text });
     expect(await context(message)).toMatchObject({ ReplyToId: "1000", ReplyToBody: text });
   });
@@ -126,11 +121,7 @@ describe("hydrateDiscordMessageIfNeeded", () => {
     if (state === "missing") {
       expect(message).toBe(test.message);
     } else {
-      const result = await context(message);
-      expect({ id: result.ReplyToId, body: result.ReplyToBody }).toEqual({
-        id: "1000",
-        body: undefined,
-      });
+      expect(await context(message)).toMatchObject({ ReplyToId: "1000", ReplyToBody: undefined });
     }
   });
 

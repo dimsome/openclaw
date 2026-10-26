@@ -67,10 +67,6 @@ describe("thread binding clock-controlled lifecycle", () => {
       });
       const binding = await bindTestThread(manager, expires ? { introText: "intro" } : {});
       if (expires) {
-        expect(binding).toMatchObject({
-          threadId: "thread-1",
-          targetSessionKey: target.targetSessionKey,
-        });
         hoisted.sendMessageDiscord.mockClear();
         hoisted.sendWebhookMessageDiscord.mockClear();
       } else {

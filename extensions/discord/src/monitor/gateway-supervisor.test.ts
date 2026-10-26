@@ -55,16 +55,16 @@ describe("classifyDiscordGatewayEvent", () => {
     );
     const transientEvent = captureGatewayEvent(stackOnlyError());
 
-    expect(reconnectEvent.type).toBe("reconnect-exhausted");
-    expect(reconnectEvent.shouldStopLifecycle).toBe(true);
-    expect(transientEvent.type).toBe("fatal");
-    expect(transientEvent.message).toBe("TypeError @ gatewayCrash (discord-gateway.js:12:34)");
-    expect(transientEvent.shouldStopLifecycle).toBe(true);
-  });
-
-  it("wraps fatal lifecycle stops with discord-specific context", () => {
-    const wrapped = new DiscordGatewayLifecycleError(captureGatewayEvent(stackOnlyError()));
-
+    expect(reconnectEvent).toMatchObject({
+      type: "reconnect-exhausted",
+      shouldStopLifecycle: true,
+    });
+    expect(transientEvent).toMatchObject({
+      type: "fatal",
+      message: "TypeError @ gatewayCrash (discord-gateway.js:12:34)",
+      shouldStopLifecycle: true,
+    });
+    const wrapped = new DiscordGatewayLifecycleError(transientEvent);
     expect(wrapped).toMatchObject({
       name: "DiscordGatewayLifecycleError",
       message: "discord gateway fatal: TypeError @ gatewayCrash (discord-gateway.js:12:34)",
