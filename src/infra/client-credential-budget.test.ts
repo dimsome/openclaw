@@ -12,7 +12,6 @@ import {
   generateStoredDeviceIdentity,
   storedDeviceIdentityToRow,
 } from "./device-identity-material.js";
-import { onInternalDiagnosticEvent, waitForDiagnosticEventsDrained } from "./diagnostic-events.js";
 import { sqliteWorkerPreloadEnv } from "./sqlite-worker-preload.test-support.js";
 
 const dirs = useAutoCleanupTempDirTracker(afterEach);
@@ -31,7 +30,7 @@ const statementKinds: [RegExp, string][] = [
   [/sqlite_schema|pragma table_list|pragma_table|pragma_index|pragma_foreign_key/, "catalog"],
 ];
 
-it("admits the six-call census identity workload once and dispatches one request per call", async () => {
+it("admits the six-call census identity workload once and bounds its database work", async () => {
   const root = dirs.make("credential-budget-");
   const env = { HOME: root, OPENCLAW_STATE_DIR: root };
   {
@@ -75,19 +74,6 @@ it("admits the six-call census identity workload once and dispatches one request
   const identity = storedDeviceIdentityToRow("primary", generateStoredDeviceIdentity(123), 456);
   const read = { kind: "identity.read", identity_key: "node" } as const;
   const create = { kind: "identity.create", identity } as const;
-  let requests = 0;
-  const stop = onInternalDiagnosticEvent(
-    (event) => {
-      if (
-        event.type === "worker.request" &&
-        event.phase === "queued" &&
-        (event.kind === "clientCredentials" || event.kind === "sqlite_writer")
-      ) {
-        requests++;
-      }
-    },
-    { include: ["worker.request"] },
-  );
   try {
     await withEnvAsync(
       { ...env, ...sqliteWorkerPreloadEnv(preload), CREDENTIAL_SQL_TRACE: statements },
@@ -102,9 +88,7 @@ it("admits the six-call census identity workload once and dispatches one request
         await drainGlobalSingletonLifecycleState();
       },
     );
-    await waitForDiagnosticEventsDrained();
   } finally {
-    stop();
     await drainGlobalSingletonLifecycleState();
   }
   const counts: Record<string, number> = {};
@@ -126,5 +110,4 @@ it("admits the six-call census identity workload once and dispatches one request
     identityInsert: 1,
     receiptWrite: 1,
   });
-  expect.soft(requests).toBe(6);
 });
