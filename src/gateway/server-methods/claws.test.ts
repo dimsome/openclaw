@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ClawHubSourceError } from "../../claws/clawhub-source.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { authorizeOperatorScopesForMethod } from "../method-scopes.js";
+import { callAgentHandler } from "./agents-mutate.test-support.js";
 import { clawsHandlers } from "./claws.js";
 import { coreGatewayHandlers } from "./core-handlers.js";
 import type { RespondFn } from "./types.js";
@@ -26,15 +27,9 @@ async function catalogRequest(
   params: Record<string, unknown>,
   getRuntimeConfig: () => unknown = () => enabled,
 ) {
-  const respond = vi.fn<RespondFn>();
-  const handler = expectDefined(clawsHandlers[method], `${method} handler`);
-  await handler({
-    req: { type: "req", id: "catalog", method },
-    params,
-    respond,
+  const handler = expectDefined(clawsHandlers[method], method);
+  const respond = await callAgentHandler(handler, method, params, {
     context: { getRuntimeConfig } as never,
-    client: null,
-    isWebchatConnect: () => false,
   });
   return respond.mock.calls;
 }

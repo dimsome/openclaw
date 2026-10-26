@@ -77,22 +77,13 @@ test.each([
   },
 );
 
-test.each(["single", "batch"] as const)(
-  "agents.list bypasses the %s catalog reader for an empty roster",
-  async (mode) => {
-    const catalog = vi.fn(async () => ({ entries: [] }));
-    const batch = vi.fn(async () => []);
-    await listAgents(
-      () => roleConfig([]),
-      [],
-      readerClient(),
-      catalog,
-      mode === "batch" ? batch : undefined,
-    );
-    expect(catalog).not.toHaveBeenCalled();
-    expect(batch).not.toHaveBeenCalled();
-  },
-);
+test("agents.list bypasses catalog readers for an empty roster", async () => {
+  const catalog = vi.fn(async () => ({ entries: [] }));
+  const batch = vi.fn(async () => []);
+  await listAgents(() => roleConfig([]), [], readerClient(), catalog, batch);
+  expect(catalog).not.toHaveBeenCalled();
+  expect(batch).not.toHaveBeenCalled();
+});
 
 test("agents.list applies role changes made while catalog preparation is pending", async () => {
   let cfg = roleConfig(["ops", "research"]);

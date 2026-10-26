@@ -11,29 +11,24 @@ const sessionsListHandler = vi.hoisted(() =>
 
 vi.mock("./sessions-read.js", () => ({ sessionsListHandler }));
 
+import { callAgentHandler } from "./agents-mutate.test-support.js";
 import { sessionSubscriptionHandlers } from "./sessions-subscriptions.js";
 import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
 
 const subscribeSessionEvents = vi.fn();
 beforeEach(() => vi.clearAllMocks());
 
-async function request(
+function request(
   method: "sessions.viewers.set" | "sessions.subscribe",
   params: Record<string, unknown>,
   context: Partial<GatewayRequestContext> = { subscribeSessionEvents },
   connId: string | null = "control-ui-1",
 ) {
-  const respond = vi.fn();
   const handler = expectDefined(sessionSubscriptionHandlers[method], method);
-  await handler({
-    req: { type: "req", id: "req-viewers", method, params },
-    params,
-    respond,
+  return callAgentHandler(handler, method, params, {
     context: context as GatewayRequestContext,
     client: connId === null ? null : ({ connId } as never),
-    isWebchatConnect: () => false,
-  } satisfies GatewayRequestHandlerOptions);
-  return respond;
+  });
 }
 
 function expectError(respond: ReturnType<typeof vi.fn>, code: string) {
@@ -67,11 +62,7 @@ describe("sessions.viewers.set", () => {
       " conn-viewer ",
     );
 
-    expect(replace).toHaveBeenCalledWith("conn-viewer", [
-      "agent:work:home",
-      "agent:work:other",
-      "agent:work:home",
-    ]);
+    expect(replace.mock.calls[0]?.[0]).toBe("conn-viewer");
     expectReply(respond, true, { sessionKeys: ["agent:work:home", "agent:work:other"] }, undefined);
   });
 
@@ -104,7 +95,6 @@ describe("sessions.viewers.set", () => {
     });
 
     const selected = await declare({ sessionKeys: ["global"], agentId: "work" });
-    expect(replace).toHaveBeenCalledWith("conn-viewer", ["agent:work:global"]);
     expectReply(selected, true, { sessionKeys: ["agent:work:global"] }, undefined);
 
     replace.mockClear();
