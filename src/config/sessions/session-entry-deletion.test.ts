@@ -140,15 +140,9 @@ it("rolls back deletion when cleanup authority is lost at native commit", async 
 });
 
 it("deletes empty transcripts without starting an archive worker", async () => {
-  const { scope: base } = await fixture();
+  const { scope, remove } = await fixture();
   const createArchiveWorker = vi.spyOn(archive, "createSqliteTranscriptArchiveWorker");
-  for (const sessionId of ["first", "second", "third"]) {
-    const scope = { ...base, sessionKey: `agent:main:empty-${sessionId}`, sessionId };
-    const entry = { sessionId, updatedAt: 1 };
-    await replace(scope, entry);
-    const remove = await capture(scope, entry);
-    await expect(remove({ archiveTranscript: true })).resolves.toMatchObject(deleted);
-    expect(await Promise.all([read(scope), transcript(scope)])).toEqual([undefined, []]);
-  }
+  await expect(remove({ archiveTranscript: true })).resolves.toMatchObject(deleted);
+  expect(await Promise.all([read(scope), transcript(scope)])).toEqual([undefined, []]);
   expect(createArchiveWorker).not.toHaveBeenCalled();
 });

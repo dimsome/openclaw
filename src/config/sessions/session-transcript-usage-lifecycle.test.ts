@@ -136,7 +136,6 @@ it.each([false, true])(
       expect(observed.unregister).not.toHaveBeenCalled();
       allowExit.resolve();
       const failure = await outcome;
-      expect(failure).toBeInstanceOf(AggregateError);
       if (!(failure instanceof AggregateError)) {
         throw new Error("Expected original usage failure and its native cleanup error");
       }
