@@ -36,14 +36,11 @@ async function requestSearch(
       }
     },
     async (baseUrl) => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-          const response = await realFetch(baseUrl, init);
-          received?.();
-          return response;
-        }),
-      );
+      vi.stubGlobal("fetch", async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const response = await realFetch(baseUrl, init);
+        received?.();
+        return response;
+      });
       result = await postJson({ ...requestDefaults, ...params }, (response) =>
         response.json(),
       ).catch((cause: unknown) => cause);
@@ -52,10 +49,8 @@ async function requestSearch(
   return { result, authorization };
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
+afterEach(vi.unstubAllGlobals);
+afterEach(vi.restoreAllMocks);
 
 const readCredential = (value: unknown) => readKey(value, "test.apiKey", ["SEARCH_A", "SEARCH_B"]);
 it.each([

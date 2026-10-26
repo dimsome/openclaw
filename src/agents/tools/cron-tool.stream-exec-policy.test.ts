@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, onTestFinished, vi } from "vitest";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -19,11 +19,7 @@ const gatewayExec = {
   execOrigin: "native",
   execTarget: { host: "gateway" },
 } as const;
-const streamJob = {
-  name: "watch events",
-  schedule,
-  payload: { kind: "agentTurn", message: "handle events" },
-};
+const streamJob = { name: "events", schedule, payload: { kind: "agentTurn", message: "event" } };
 
 function createStreamTool(params: {
   tools?: CronToolOptions["creatorToolAllowlist"];
@@ -62,63 +58,58 @@ function createStreamTool(params: {
   };
 }
 
-describe("cron stream creator exec policy", () => {
-  let state: Awaited<ReturnType<typeof createOpenClawTestState>>;
-  beforeAll(async () => {
-    state = await createOpenClawTestState({ label: "cron-stream-exec-policy" });
-    saveExecApprovals({ version: 1, defaults: { security: "full", ask: "off" } });
-  });
-  afterAll(async () => await state.cleanup());
-  beforeEach(() => {
-    setRuntimeConfigSnapshot({});
-    onTestFinished(clearRuntimeConfigSnapshot);
-  });
+let state: Awaited<ReturnType<typeof createOpenClawTestState>>;
+beforeAll(async () => {
+  state = await createOpenClawTestState({ label: "cron-stream-exec-policy" });
+  saveExecApprovals({ version: 1, defaults: { security: "full", ask: "off" } });
+});
+afterAll(async () => await state.cleanup());
+afterEach(clearRuntimeConfigSnapshot);
 
-  it("allows creation with Gateway-pinned native exec", async () => {
-    const h = createStreamTool({ tools: [gatewayExec] });
-    await h.add();
-    expect(h.methods()).toEqual(["cron.add"]);
-  });
+it("allows creation with Gateway-pinned native exec", async () => {
+  const h = createStreamTool({ tools: [gatewayExec] });
+  await h.add();
+  expect(h.methods()).toEqual(["cron.add"]);
+});
 
-  it("does not forward an ask-always stream without captured creator authority", async () => {
-    const h = createStreamTool({ exec: { ask: "always" } });
-    await expect(h.add()).rejects.toThrow("requires the user's approval");
-    expect(h.callGatewayTool).not.toHaveBeenCalled();
-  });
+it("does not forward an ask-always stream without captured creator authority", async () => {
+  const h = createStreamTool({ exec: { ask: "always" } });
+  await expect(h.add()).rejects.toThrow("requires the user's approval");
+  expect(h.callGatewayTool).not.toHaveBeenCalled();
+});
 
-  it.each([
-    ["missing sandbox", { exec: { host: "auto", ask: "always" }, sandboxed: true }],
-    ["allowlisted exec", { exec: { mode: "allowlist" } }],
-    [
-      "sandbox overrides Gateway pin",
-      {
-        tools: [{ ...gatewayExec, execOrigin: "openclaw" }],
-        exec: { host: "auto" },
-        sandboxed: true,
-      },
-    ],
-    ["uncaptured legacy origin", { tools: ["exec"] }],
-  ] satisfies [string, Parameters<typeof createStreamTool>[0]][])(
-    "rejects creation: %s",
-    async (_, params) => {
-      const h = createStreamTool(params);
-      await expect(h.add()).rejects.toThrow("Gateway exec authority");
-      expect(h.callGatewayTool).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each([
-    { label: "disablement", patch: { enabled: false }, methods: ["cron.update"] },
-    { label: "unchanged source", patch: { schedule }, methods: ["cron.get", "cron.update"] },
+it.each([
+  ["missing sandbox", { exec: { host: "auto", ask: "always" }, sandboxed: true }],
+  ["allowlisted exec", { exec: { mode: "allowlist" } }],
+  [
+    "sandbox overrides Gateway pin",
     {
-      label: "non-stream replacement and enable",
-      stored: { enabled: false },
-      patch: { enabled: true, schedule: { kind: "every", everyMs: 60_000 } },
-      methods: ["cron.get", "cron.update"],
+      tools: [{ ...gatewayExec, execOrigin: "openclaw" }],
+      exec: { host: "auto" },
+      sandboxed: true,
     },
-  ] as const)("allows $label without exec authority", async ({ patch, methods, ...params }) => {
-    const h = createStreamTool({ tools: ["read"], stored: {}, ...params });
-    await h.update(patch);
-    expect(h.methods()).toEqual(methods);
-  });
+  ],
+  ["uncaptured legacy origin", { tools: ["exec"] }],
+] satisfies [string, Parameters<typeof createStreamTool>[0]][])(
+  "rejects creation: %s",
+  async (_, params) => {
+    const h = createStreamTool(params);
+    await expect(h.add()).rejects.toThrow("Gateway exec authority");
+    expect(h.callGatewayTool).not.toHaveBeenCalled();
+  },
+);
+
+it.each([
+  { label: "disablement", patch: { enabled: false }, methods: ["cron.update"] },
+  { label: "unchanged source", patch: { schedule }, methods: ["cron.get", "cron.update"] },
+  {
+    label: "non-stream replacement and enable",
+    stored: { enabled: false },
+    patch: { enabled: true, schedule: { kind: "every", everyMs: 60_000 } },
+    methods: ["cron.get", "cron.update"],
+  },
+] as const)("allows $label without exec authority", async ({ patch, methods, ...params }) => {
+  const h = createStreamTool({ tools: ["read"], stored: {}, ...params });
+  await h.update(patch);
+  expect(h.methods()).toEqual(methods);
 });

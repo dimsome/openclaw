@@ -22,15 +22,13 @@ export function stubPdfInput(text = "PDF") {
   vi.spyOn(pdfExtract, "extractPdfContent").mockResolvedValue({ text, images: [] });
 }
 
-type StubPreparedRuntimeSnapshot = {
+// Empty prepared facts leave model resolution to each fixture's registry.
+export function withPreparedRuntimeFacts(snapshot: {
   agentDir: string;
   config: OpenClawConfig;
   workspaceDir?: string;
   createStores: () => { authStorage: unknown; modelRegistry: unknown };
-};
-
-// Empty prepared facts leave model resolution to each fixture's registry.
-export function withPreparedRuntimeFacts(snapshot: StubPreparedRuntimeSnapshot) {
+}) {
   return {
     ...snapshot,
     metadataSnapshot: createEmptyPluginMetadataSnapshot(snapshot.workspaceDir),
@@ -89,8 +87,7 @@ export function createPdfToolInfraStub(completeMock: Mock) {
       loadSpy.mockResolvedValue(FAKE_PDF_MEDIA);
     }
 
-    const setRuntimeApiKey = vi.fn();
-    const authStorage = { setRuntimeApiKey };
+    const authStorage = { setRuntimeApiKey: vi.fn() };
     const model = {
       baseUrl: "https://pdf-fixture.invalid/v1",
       provider,
@@ -99,7 +96,6 @@ export function createPdfToolInfraStub(completeMock: Mock) {
       input: modalities,
     };
     const modelRegistry = createPdfModelRegistry((_provider, id) => ({ id, name: id, ...model }));
-    const createStores = () => ({ authStorage, modelRegistry });
     vi.spyOn(preparedModelRuntime, "acquireAgentRunPreparedModelRuntime").mockImplementation(
       async ({ agentDir: capturedAgentDir, config, workspaceDir }) =>
         ({
@@ -107,7 +103,7 @@ export function createPdfToolInfraStub(completeMock: Mock) {
             agentDir: capturedAgentDir,
             config,
             workspaceDir,
-            createStores,
+            createStores: () => ({ authStorage, modelRegistry }),
           }),
           [Symbol.asyncDispose]: async () => {},
         }) as never,
@@ -120,7 +116,7 @@ export function createPdfToolInfraStub(completeMock: Mock) {
     auth.mockResolvedValue({ apiKey: "test-key", mode: "api-key", source: "fixture" });
     vi.spyOn(modelAuth, "requireApiKey").mockReturnValue("test-key");
 
-    return { loadSpy, setRuntimeApiKey };
+    return { loadSpy, setRuntimeApiKey: authStorage.setRuntimeApiKey };
   }
 
   return { createPdfModelRegistry, stubPdfToolInfra };

@@ -72,7 +72,7 @@ export function registerSessionsSendFixedOwnerTests(
     sessionDirs: { make(): string };
   },
 ) {
-  const { callGatewayMock, requireDetails } = h;
+  const { callGatewayMock, requireDetails, createTool, sessionDirs } = h;
   it.each([
     { sessionKey: "global", ownKey: "global", mainKey: undefined },
     { sessionKey: "work", ownKey: "agent:research:work", mainKey: "work" },
@@ -80,23 +80,21 @@ export function registerSessionsSendFixedOwnerTests(
     "authorizes $sessionKey against its persisted fixed-store owner",
     async ({ sessionKey, ownKey, mainKey }) => {
       callGatewayMock.mockReset();
-      const storePath = path.join(h.sessionDirs.make(), "sessions.json");
+      const storePath = path.join(sessionDirs.make(), "sessions.json");
       const send = (ownerAgentId: string) =>
-        h
-          .createTool({
-            agentId: "research",
-            agentSessionKey: `agent:research:${mainKey ?? "main"}`,
-            config: {
-              session: { ...(mainKey ? { mainKey } : {}), store: storePath },
-              agents: {
-                ownership: "explicit",
-                entries: { ops: {}, research: {} },
-                defaults: { sessionStore: { agentId: ownerAgentId } },
-              },
-              tools: { agentToAgent: { enabled: false }, sessions: { visibility: "all" } },
+        createTool({
+          agentId: "research",
+          agentSessionKey: `agent:research:${mainKey ?? "main"}`,
+          config: {
+            session: { ...(mainKey ? { mainKey } : {}), store: storePath },
+            agents: {
+              ownership: "explicit",
+              entries: { ops: {}, research: {} },
+              defaults: { sessionStore: { agentId: ownerAgentId } },
             },
-          })
-          .execute("owner-check", { sessionKey, message: "status?", timeoutSeconds: 0 });
+            tools: { agentToAgent: { enabled: false }, sessions: { visibility: "all" } },
+          },
+        }).execute("owner-check", { sessionKey, message: "status?", timeoutSeconds: 0 });
 
       if (mainKey) {
         callGatewayMock.mockImplementation(async (request: { method?: string }) =>

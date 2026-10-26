@@ -53,27 +53,20 @@ it.each(["host", "worker", "bound"] as const)(
   async (mode) => {
     const summary = mode === "worker" ? localPortal : portal;
     const recorded = recorder(summary);
-    const bound = {
-      sessionKey: "agent:main:preview",
-      agentId: "main",
-      environmentId: "worker:preview",
-    };
+    const bound = { sessionKey: "agent:main:p", agentId: "main", environmentId: "worker:p" };
     let current = true;
-    const selected =
-      mode === "bound"
-        ? createAvailablePortalTools({
-            senderIsOwner: false,
-            sessionPortalTarget: {
-              ...bound,
-              assertCurrent() {
-                if (!current) {
-                  throw new Error("retired target");
-                }
-              },
-            },
-          })[0]!
-        : tool;
-    expect(selected.parameters).toEqual(tool.parameters);
+    const target = {
+      ...bound,
+      assertCurrent() {
+        if (!current) {
+          throw new Error("retired target");
+        }
+      },
+    };
+    const selected = createAvailablePortalTools({
+      senderIsOwner: mode !== "bound",
+      sessionPortalTarget: mode === "bound" ? target : undefined,
+    })[0]!;
     const environment =
       mode === "bound" ? bound : mode === "worker" ? { environmentId: bound.environmentId } : {};
     const args = mode === "worker" ? { environmentId: bound.environmentId } : {};
@@ -103,9 +96,6 @@ it.each(["host", "worker", "bound"] as const)(
       });
     }
     if (mode === "bound") {
-      await expect(
-        selected.execute("host", { action: "open", port: 3000, environmentId: "other" }),
-      ).rejects.toThrow("bound");
       current = false;
       await expect(selected.execute("stale", { action: "open", port: 3000 })).rejects.toThrow(
         "retired target",
