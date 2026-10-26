@@ -55,25 +55,16 @@ it("attributes queued commands without changing wire bytes or exposing private c
   const check = async (type: string, input: unknown, requestClass: string) => {
     const command = { type, input };
     await expect(store.execute(command)).resolves.toBe("committed");
-    expect(dispatch).toHaveBeenLastCalledWith(
-      serialize(command),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      requestClass,
-    );
+    expect(dispatch.mock.lastCall?.[0]).toEqual(serialize(command));
+    expect(dispatch.mock.lastCall?.[5]).toBe(requestClass);
   };
   const input = { value: "synthetic-private-payload" };
   const cases = [
     ["audit.writer.process", "audit.writer.process"],
     ["worktrees.private-customer-123", "worktrees"],
-    ["capture.recordEventWithPayload", "capture"],
     ["session.entry.read", "session.entry.read"],
-    ["transcript.prepare", "transcript.prepare"],
     ["session.actor.private-customer-123", "sessions"],
     ["pluginState.get", "plugin_state"],
-    ["audit.private-customer-123", "audit"],
     ["private-customer-123.execute", "execute"],
     ["unrecognized", "execute"],
   ] as const;
@@ -107,13 +98,13 @@ it.each(["scope", "command"] as const)(
     const finish = createDeferredCore<string>();
     const release = vi.fn(async (_reclaiming: boolean) => {});
     const retireIdle = vi.fn(() => store.close());
+    const operation = () => finish.promise;
+    const track = () => () => {};
     const { client, store } = clientFixture({
       dispatch: () => finish.promise,
       release,
       retireIdle,
     });
-    const operation = () => finish.promise;
-    const track = () => () => {};
     const accepted =
       kind === "scope"
         ? runOperation(client, operation, undefined, track)

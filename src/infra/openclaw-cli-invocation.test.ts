@@ -1,8 +1,7 @@
-import { mkdir, realpath, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, unlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { expectDefined } from "@openclaw/normalization-core/expect";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { isBunRuntime } from "../daemon/runtime-binary.js";
@@ -70,17 +69,15 @@ it("uses the standalone sidecar from outside its installation", async () => {
 
 it.each([false, true])("pins TSX but not debugger ownership (equals=%s)", (equals) => {
   const runtimeArgs = ["--trace-warnings", "--import", "/other-loader.mjs"];
+  const debuggerArgs =
+    "--inspect 127.0.0.1:9231 --inspect-brk=0 --inspect-wait=0 --inspect-port 9230 --inspect-port=9232".split(
+      " ",
+    );
   const invocation = invoke({
     argv1: repoSourceEntry,
     execArgv: [
       ...runtimeArgs,
-      "--inspect",
-      "127.0.0.1:9231",
-      "--inspect-brk=0",
-      "--inspect-wait=0",
-      "--inspect-port",
-      "9230",
-      "--inspect-port=9232",
+      ...debuggerArgs,
       ...(equals ? ["--import=tsx"] : ["--import", "tsx"]),
     ],
     execPath: resolveTestNodeExecPath(),
@@ -117,12 +114,14 @@ it.each(["openclaw.mjs", path.join("dist", "index.js")])(
     await unlink(current);
     await symlink(releaseB, current, "junction");
 
-    const expectRelease = async (invocation: Invocation, release: string) => {
-      const entry = await realpath(expectDefined(invocation.args[0], "CLI entry"));
-      expect([entry, invocation.cwd]).toEqual([path.join(release, entryName), release]);
-    };
-    await expectRelease(prepared, releaseA);
-    await expectRelease(invoke(options, ["--version"]), releaseB);
+    expect(prepared).toMatchObject({
+      args: [path.join(releaseA, entryName), "--version"],
+      cwd: releaseA,
+    });
+    expect(invoke(options, ["--version"])).toMatchObject({
+      args: [path.join(releaseB, entryName), "--version"],
+      cwd: releaseB,
+    });
   },
 );
 
