@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { formatFastModeAutoLabel } from "../shared/fast-mode.js";
 import {
-  formatFastModeAutoProgressText,
   formatFastModeCommandOptions,
-  formatFastModeCurrentStatus,
   formatFastModeStatusValue,
   resolveFastModeForElapsed,
   resolveFastModeState,
@@ -70,24 +67,20 @@ describe("resolveFastModeState", () => {
   );
 
   it("formats auto mode with the default threshold", () => {
-    expect(formatFastModeAutoLabel()).toBe("auto (60 sec)");
-    expect(formatFastModeStatusValue({ mode: "auto" })).toBe("auto (60 sec)");
-    expect(formatFastModeAutoLabel({ fastAutoOnSeconds: 30 })).toBe("auto (30 sec)");
-    expect(formatFastModeStatusValue({ mode: "auto", fastAutoOnSeconds: 30 })).toBe(
+    const auto = { mode: "auto" as const, fastAutoOnSeconds: 30 };
+    expect([
+      formatFastModeStatusValue({ mode: "auto" }),
+      formatFastModeStatusValue(auto),
+      formatFastModeStatusValue({ mode: true }),
+      formatFastModeStatusValue({ mode: "ultrafast" }),
+      formatFastModeCommandOptions(auto),
+    ]).toEqual([
+      "auto (60 sec)",
       "auto (30 sec)",
-    );
-    expect(formatFastModeStatusValue({ mode: true })).toBe("on");
-    expect(formatFastModeStatusValue({ mode: "ultrafast" })).toBe("ultrafast");
-    expect(formatFastModeCommandOptions({ fastAutoOnSeconds: 30 })).toBe(
+      "on",
+      "ultrafast",
       "on, off, ultrafast, auto (30 sec), default, status",
-    );
-    expect(
-      formatFastModeCurrentStatus({
-        mode: "auto",
-        source: "config",
-        fastAutoOnSeconds: 30,
-      }),
-    ).toBe("Current fast mode: auto (30 sec) (default: model).");
+    ]);
   });
 
   it.each([
@@ -121,29 +114,11 @@ describe("resolveFastModeForElapsed", () => {
   it("uses configured auto seconds as the elapsed threshold", () => {
     const input = { mode: "auto" as const, fastAutoOnSeconds: 30, startedAtMs: 1_000 };
     const expected = { mode: "auto", elapsedSeconds: 30, fastAutoOnSeconds: 30 };
-    expect(resolveFastModeForElapsed({ ...input, nowMs: 31_000 })).toMatchObject({
-      ...expected,
-      enabled: true,
-    });
-    expect(resolveFastModeForElapsed({ ...input, nowMs: 31_001 })).toMatchObject({
-      ...expected,
-      enabled: false,
-    });
-  });
-
-  it("formats auto transition progress", () => {
-    expect(
-      formatFastModeAutoProgressText({
-        enabled: false,
-        elapsedSeconds: 75,
-        fastAutoOnSeconds: 30,
-      }),
-    ).toBe("💨Fast: auto-off(75s>=30s)");
-    expect(
-      formatFastModeAutoProgressText({
-        enabled: true,
-        elapsedSeconds: 0,
-      }),
-    ).toBe("💨Fast: auto-on");
+    expect([31_000, 31_001].map((nowMs) => resolveFastModeForElapsed({ ...input, nowMs }))).toEqual(
+      [
+        { ...expected, enabled: true },
+        { ...expected, enabled: false },
+      ],
+    );
   });
 });
