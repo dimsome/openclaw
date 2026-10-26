@@ -7,18 +7,11 @@ import { clearPluginMetadataLifecycleCaches } from "./plugin-metadata-lifecycle.
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.types.js";
 import { createColdPluginFixture } from "./test-helpers/cold-plugin-fixtures.js";
 
-const counters = vi.hoisted(() => ({ manifestRegistryRebuilds: 0, discoveryScans: 0 }));
-
 vi.mock("../config/io.plugin-metadata.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../config/io.plugin-metadata.js")>();
   return {
     ...actual,
-    resolveConfigWidePluginManifestRegistry: (
-      ...args: Parameters<typeof actual.resolveConfigWidePluginManifestRegistry>
-    ) => {
-      counters.manifestRegistryRebuilds += 1;
-      return actual.resolveConfigWidePluginManifestRegistry(...args);
-    },
+    resolveConfigWidePluginManifestRegistry: vi.fn(actual.resolveConfigWidePluginManifestRegistry),
   };
 });
 
@@ -26,50 +19,50 @@ vi.mock("./discovery.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./discovery.js")>();
   return {
     ...actual,
-    discoverOpenClawPlugins: (...args: Parameters<typeof actual.discoverOpenClawPlugins>) => {
-      counters.discoveryScans += 1;
-      return actual.discoverOpenClawPlugins(...args);
-    },
+    discoverOpenClawPlugins: vi.fn(actual.discoverOpenClawPlugins),
   };
 });
 
 const { buildPluginSnapshotReportAsync, withPluginDiagnosticsReport } = await import("./status.js");
 const { resolveEffectivePluginIds } = await import("./effective-plugin-ids.js");
 const { loadPluginMetadataSnapshot } = await import("./plugin-metadata-snapshot.js");
+const { resolveConfigWidePluginManifestRegistry } = await import("../config/io.plugin-metadata.js");
+const { discoverOpenClawPlugins } = await import("./discovery.js");
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-effective-plugin-ids-"));
 
-function coldPluginRoot(pluginId: string, channelId: string): string {
+const pluginIds = ["cold-plugin", "other-plugin"];
+const roots = pluginIds.map((pluginId) => {
   const rootDir = path.join(tempRoot, pluginId);
   fs.mkdirSync(rootDir, { recursive: true });
   createColdPluginFixture({
     rootDir,
     pluginId,
-    channelId,
+    channelId: pluginId.replace("plugin", "channel"),
     providerId: `${pluginId}-provider`,
     packageName: `@example/${pluginId}`,
   });
   return rootDir;
-}
-
-const channelOwnerRoot = coldPluginRoot("cold-plugin", "cold-channel");
-const otherRoot = coldPluginRoot("other-plugin", "other-channel");
+});
 
 const config: OpenClawConfig = {
   channels: { "cold-channel": { enabled: true } },
   plugins: {
-    load: { paths: [channelOwnerRoot, otherRoot] },
-    entries: { "cold-plugin": { enabled: true }, "other-plugin": { enabled: true } },
+    load: { paths: roots },
+    entries: Object.fromEntries(pluginIds.map((id) => [id, { enabled: true }])),
   },
 } as OpenClawConfig;
 
 function counts(ids: string[]) {
-  return { rebuilds: counters.manifestRegistryRebuilds, scans: counters.discoveryScans, ids };
+  return {
+    rebuilds: vi.mocked(resolveConfigWidePluginManifestRegistry).mock.calls.length,
+    scans: vi.mocked(discoverOpenClawPlugins).mock.calls.length,
+    ids,
+  };
 }
 
 function resetCounters() {
-  counters.manifestRegistryRebuilds = 0;
-  counters.discoveryScans = 0;
+  vi.clearAllMocks();
 }
 
 async function countReport(effectiveOnly: boolean) {

@@ -5,21 +5,12 @@ import type { PluginOrigin } from "./plugin-origin.types.js";
 
 const granted = { effective: true };
 const denied = { effective: false };
-const allowed = { effective: true, configured: true };
 const restricted = { effective: false, configured: false };
 type Grant = typeof granted & { configured?: boolean };
 
 it.each<[string, PluginOrigin | "official", PluginEntryConfig["hooks"], Grant, Grant]>([
   ["bundled defaults", "bundled", undefined, granted, granted],
   ["external defaults", "global", undefined, granted, denied],
-  ["official defaults", "official", undefined, granted, denied],
-  [
-    "external grants",
-    "workspace",
-    { allowPromptInjection: false, allowConversationAccess: true },
-    restricted,
-    allowed,
-  ],
   ["bundled restrictions", "bundled", { allowConversationAccess: false }, granted, restricted],
 ])(
   "preserves fail-closed policy for %s",

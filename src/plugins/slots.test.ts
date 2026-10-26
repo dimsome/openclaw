@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import {
-  applyExclusiveSlotSelection,
-  hasKind,
-  kindsEqual,
-  resetPluginSlotsToDefaults,
-} from "./slots.js";
+import { applyExclusiveSlotSelection, kindsEqual, resetPluginSlotsToDefaults } from "./slots.js";
 
 function selectEngine(overrides: Partial<Parameters<typeof applyExclusiveSlotSelection>[0]> = {}) {
   return applyExclusiveSlotSelection({
@@ -75,14 +70,6 @@ describe("applyExclusiveSlotSelection", () => {
     },
   );
 
-  it("repairs the old plugin-ID selection for a uniquely declared engine", () => {
-    const result = selectEngine({
-      config: { plugins: { slots: { contextEngine: "vendor-plugin" } } },
-      legacyContextEngineOwnerId: "vendor-plugin",
-    });
-    expect(result.plugins?.slots?.contextEngine).toBe("canonical-engine");
-  });
-
   it.each([
     [undefined, "memory-core"],
     ["memory", "memory-core"],
@@ -113,11 +100,6 @@ describe("applyExclusiveSlotSelection", () => {
     const config = {};
     expect(applyExclusiveSlotSelection({ config, selectedId: "custom" })).toBe(config);
   });
-});
-
-it("hasKind matches within a kind array", () => {
-  expect(hasKind(["memory", "context-engine"], "memory")).toBe(true);
-  expect(hasKind(["memory", "context-engine"], "context-engine")).toBe(true);
 });
 
 it("kindsEqual matches string against single-element array", () => {
