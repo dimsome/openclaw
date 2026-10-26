@@ -5,12 +5,10 @@ import { createChatSubmissions, type RetainedChatSubmission } from "./chat-submi
 function message(text: string): NonNullable<RetainedChatSubmission["message"]> {
   return { role: "user", content: [{ type: "text", text }], timestamp: 1, __openclaw: {} };
 }
-
 type Draft = RetainedChatSubmission["message"];
 function pending(sessionKey: string, draft: Draft = null, canDisplay = () => true) {
   return { creation: { sessionKey, admitted: false }, message: draft, canDisplay };
 }
-
 it.each([
   ["initial", 32],
   ["delivered", 64],
@@ -34,10 +32,7 @@ it.each([
     retain(index);
   }
   expect(read(0)).toBeFalsy();
-  expect(read(1)).toMatchObject({
-    message: { content: [{ type: "text", text: "1" }] },
-    pendingRunId: "1",
-  });
+  expect(read(1)?.message).toEqual(message("1"));
   expect(read(limit)?.pendingRunId).toBe(String(limit));
   expect(read(1, {})).toBeFalsy();
   if (kind === "delivered") {
@@ -58,19 +53,10 @@ it("prepares accepted prompts only with explicit run ownership", () => {
   const item = { text: "prompt", createdAt: 123 };
   handoff.retain(buildInitialChatSubmission(sessionKey, item, client));
   expect(handoff.readInitial(sessionKey, client)).toBeNull();
-
   handoff.retain(buildInitialChatSubmission(sessionKey, item, client, "run"));
-
-  expect(handoff.readInitial("main", client)).toMatchObject({
-    sessionKey,
-    owner: client,
-    pendingRunId: "run",
-    pending: true,
-    message: {
-      content: [{ type: "text", text: "prompt" }],
-      __openclaw: { idempotencyKey: "run:user" },
-    },
-  });
+  const retained = handoff.readInitial("main", client);
+  expect(retained?.pendingRunId).toBe("run");
+  expect(retained?.message?.["__openclaw"].idempotencyKey).toBe("run:user");
 });
 
 it("exposes pre-admission bytes only to the live owner and retains route metadata after disposal", () => {

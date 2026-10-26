@@ -7,10 +7,8 @@ import { applyServerUiPrefs, refreshProfileAppearancePrefs } from "./server-pref
 import { pushServerUiPrefs, resetServerUiPrefsSync } from "./server-prefs.ts";
 import { patchSettings } from "./settings.ts";
 
-export type RequestMock = ReturnType<
-  typeof vi.fn<(method: string, params?: unknown) => Promise<unknown>>
->;
-
+type Request = (method: string, params?: unknown) => Promise<unknown>;
+export type RequestMock = ReturnType<typeof vi.fn<Request>>;
 export function installServerPrefsStorage(scope: string, restoreMocks = false) {
   beforeEach(() => {
     vi.stubGlobal("localStorage", createStorageMock());
@@ -80,7 +78,6 @@ export function createServerPrefsWriter(
   };
   return writer;
 }
-
 export function createProfilePrefsServer(
   initial: Record<string, Record<string, unknown>> = {},
   scope = "ws://navigation",
@@ -90,25 +87,23 @@ export function createProfilePrefsServer(
 ) {
   const profiles = structuredClone(initial);
   const connect = (profileId: string) => {
-    const request = vi.fn<(method: string, params?: unknown) => Promise<unknown>>(
-      async (method, params) => {
-        const entries = (profiles[profileId] ??= {});
-        if (method === "users.prefs.get") {
-          return { status: "ok", entries: structuredClone(entries) };
+    const request = vi.fn<Request>(async (method, params) => {
+      const entries = (profiles[profileId] ??= {});
+      if (method === "users.prefs.get") {
+        return { status: "ok", entries: structuredClone(entries) };
+      }
+      if (method !== "users.prefs.set") {
+        throw new Error("unexpected global mutation: " + method);
+      }
+      const update = params as UsersPrefsSetParams;
+      for (const [key, expected] of Object.entries(update.expectedEntries ?? {})) {
+        if (JSON.stringify(entries[key] ?? null) !== JSON.stringify(expected)) {
+          return { status: "conflict" };
         }
-        if (method !== "users.prefs.set") {
-          throw new Error("unexpected global mutation: " + method);
-        }
-        const update = params as UsersPrefsSetParams;
-        for (const [key, expected] of Object.entries(update.expectedEntries ?? {})) {
-          if (JSON.stringify(entries[key] ?? null) !== JSON.stringify(expected)) {
-            return { status: "conflict" };
-          }
-        }
-        Object.assign(entries, structuredClone(update.entries));
-        return { status: "ok" };
-      },
-    );
+      }
+      Object.assign(entries, structuredClone(update.entries));
+      return { status: "ok" };
+    });
     const writer = createServerPrefsWriter(request, scope, true, { ok: true }, false);
     const refresh = () =>
       refreshProfileAppearancePrefs({
@@ -122,7 +117,6 @@ export function createProfilePrefsServer(
   };
   return { profiles, connect };
 }
-
 export function refreshServerPrefsProfile(
   writer: ReturnType<typeof createServerPrefsWriter>,
   profileId: string,
@@ -137,7 +131,6 @@ export function refreshServerPrefsProfile(
     onApplied: vi.fn(),
   });
 }
-
 export async function initializeServerPrefsProfile(
   scope: string,
   profileId: string,

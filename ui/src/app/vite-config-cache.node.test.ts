@@ -26,10 +26,7 @@ it("builds raw inventories and refreshes cached identity without changing compre
   await mkdir(path.join(output, "assets"));
   const assetName = "assets/app-content-hash.js";
   const source = "export const answer = 42;";
-  const assets = [
-    { fileName: assetName, source: Buffer.from(source) },
-    ...(await createControlUiPrecompressedAssetVariants(assetName, source)),
-  ];
+  const compressed = await createControlUiPrecompressedAssetVariants(assetName, source);
   const deferredFiles = [
     "assets/__vite-browser-external-2447137e-CWgf1vdC.js",
     "assets/session-actions-AbCd1234.js",
@@ -46,21 +43,10 @@ it("builds raw inventories and refreshes cached identity without changing compre
     "assets/session-actions-AbCd1234.js.map",
     "plugins/example/assets/plugin-AbCd1234.js",
   ];
-  for (const fileName of [...deferredFiles, ...excludedFiles]) {
+  for (const fileName of [assetName, ...deferredFiles, ...excludedFiles]) {
     await mkdir(path.dirname(path.join(output, fileName)), { recursive: true });
-    assets.push(
-      { fileName, source: Buffer.from(source) },
-      ...(await createControlUiPrecompressedAssetVariants(fileName, source)),
-    );
+    await writeFile(path.join(output, fileName), source);
   }
-  const writeAssets = async (compressed: boolean) => {
-    for (const asset of assets.filter(
-      ({ fileName }) => compressed || !/\.(br|gz)$/u.test(fileName),
-    )) {
-      await writeFile(path.join(output, asset.fileName), asset.source);
-    }
-  };
-  await writeAssets(false);
   await writeFile(path.join(output, "index.html"), "<html><head></head></html>");
   const first = normalizeControlUiBuildInfo({ version: "1.0.0", dirty: false, buildId: "first" });
   const second = {
@@ -87,9 +73,10 @@ it("builds raw inventories and refreshes cached identity without changing compre
   expect(readdirSync(path.join(output, "assets")).some((name) => /\.(br|gz)$/u.test(name))).toBe(
     false,
   );
-  await writeAssets(true);
+  for (const asset of compressed) {
+    await writeFile(path.join(output, asset.fileName), asset.source);
+  }
   await refreshControlUiBuildOutput(output, second);
-
   const html = read("index.html");
   const identityScript = html.match(
     /<script\b[^>]*\bid="openclaw-control-ui-build-info"[^>]*>(.*?)<\/script>/u,
@@ -113,7 +100,7 @@ it("builds raw inventories and refreshes cached identity without changing compre
   expect(offline.routes).not.toContain("/api");
   expect(offline.routePrefixes).not.toContain("/plugins/");
   expect(worker).not.toBe(previousWorker);
-  for (const asset of assets) {
+  for (const asset of compressed) {
     expect(readFileSync(path.join(output, asset.fileName))).toEqual(asset.source);
   }
   const manifest: { icons: { src: string }[] } = JSON.parse(read("manifest.webmanifest"));

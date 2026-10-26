@@ -8,7 +8,6 @@ import { navigateWithRouteTransition } from "./route-transition.ts";
 
 const location = (pathname: string, search = "") => ({ pathname, search, hash: "" });
 const chatReady = () => document.dispatchEvent(new Event(CHAT_ROUTE_READY_EVENT));
-
 function testDocumentWithOutlet(
   animate = vi.fn(() => ({ finished: Promise.resolve() }) as Animation),
 ) {
@@ -30,20 +29,13 @@ function testDocumentWithOutlet(
     animate,
     navigate,
     router,
-    transition: (options: Partial<Parameters<typeof navigateWithRouteTransition>[0]> = {}) =>
-      navigateWithRouteTransition({
-        document,
-        getOutlet: () => outlet,
-        router,
-        from: "new-session",
-        to: "chat",
-        navigate,
-        prefersReducedMotion: false,
-        ...options,
-      }),
+    document,
+    getOutlet: () => outlet,
+    from: "new-session" as const,
+    to: "chat" as const,
+    prefersReducedMotion: false,
   };
 }
-
 afterEach(() => document.body.replaceChildren());
 
 it.each([false, true])(
@@ -52,13 +44,12 @@ it.each([false, true])(
     const test = testDocumentWithOutlet();
     const navigation = createDeferredCore();
     test.navigate.mockReturnValue(navigation.promise);
-    const transition = test.transition({ prefersReducedMotion });
+    const transition = navigateWithRouteTransition({ ...test, prefersReducedMotion });
     expect(test.navigate).toHaveBeenCalledOnce();
     expect(test.animate).not.toHaveBeenCalled();
     navigation.resolve();
     chatReady();
     await transition;
-
     expect(test.navigate).toHaveBeenCalledOnce();
     expect(test.animate).toHaveBeenCalledTimes(prefersReducedMotion ? 0 : 1);
   },
@@ -68,7 +59,7 @@ it("propagates navigation failure without animating", async () => {
   const test = testDocumentWithOutlet();
   const failure = new Error("Chat route failed to load");
   test.navigate.mockRejectedValue(failure);
-  await expect(test.transition()).rejects.toBe(failure);
+  await expect(navigateWithRouteTransition(test)).rejects.toBe(failure);
   expect(test.animate).not.toHaveBeenCalled();
 });
 
@@ -77,40 +68,39 @@ it.each([
   { from: "new-session", to: "about" },
 ] as const)("navigates directly for $from to $to", async (options) => {
   const test = testDocumentWithOutlet();
-  await test.transition(options);
+  await navigateWithRouteTransition({ ...test, ...options });
   expect(test.navigate).toHaveBeenCalledOnce();
   expect(test.animate).not.toHaveBeenCalled();
 });
 
-it("cancels a running entrance when another route takes over", async () => {
-  const cancel = vi.fn();
-  const animate = vi.fn(() => ({ finished: new Promise(() => {}), cancel }) as Animation);
-  const test = testDocumentWithOutlet(animate);
-  const transition = test.transition();
-  chatReady();
-  await vi.waitFor(() => expect(animate).toHaveBeenCalledOnce());
-
-  await test.router.navigate("about", undefined);
-  await transition;
-
-  expect(cancel).toHaveBeenCalledOnce();
-});
-
-it("keeps waiting through same-path focus cleanup but retires a different Chat destination", async () => {
-  const test = testDocumentWithOutlet();
-  const visit = (path: string, search = "", history: "push" | "replace" = "push") =>
-    test.router.navigate("chat", undefined, { history }, location(path, search));
-  const navigation = visit("/chat/main/first", "?focusComposer=1");
-  const transition = test.transition({ navigate: () => navigation });
-  await navigation;
-  let settled = false;
-  void transition.then(() => {
-    settled = true;
-  });
-  await visit("/chat/main/first", "", "replace");
-  expect(settled).toBe(false);
-  await visit("/chat/main/second");
-  await transition;
-  chatReady();
-  expect(test.animate).not.toHaveBeenCalled();
-});
+it.each([false, true])(
+  "keeps focus cleanup but retires replaced Chat (animating: %s)",
+  async (animating) => {
+    const cancel = vi.fn();
+    const animate = vi.fn(() => ({ finished: new Promise(() => {}), cancel }) as Animation);
+    const test = testDocumentWithOutlet(animate);
+    const visit = (path: string, search = "", history: "push" | "replace" = "push") =>
+      test.router.navigate("chat", undefined, { history }, location(path, search));
+    const navigation = visit("/chat/main/first", "?focusComposer=1");
+    const transition = navigateWithRouteTransition({ ...test, navigate: () => navigation });
+    await navigation;
+    let settled = false;
+    void transition.then(() => {
+      settled = true;
+    });
+    await visit("/chat/main/first", "", "replace");
+    expect(settled).toBe(false);
+    if (animating) {
+      chatReady();
+      await vi.waitFor(() => expect(animate).toHaveBeenCalledOnce());
+      await test.router.navigate("about", undefined);
+    } else {
+      await visit("/chat/main/second");
+      expect(animate).not.toHaveBeenCalled();
+    }
+    await transition;
+    expect(cancel).toHaveBeenCalledTimes(animating ? 1 : 0);
+    chatReady();
+    expect(animate).toHaveBeenCalledTimes(animating ? 1 : 0);
+  },
+);

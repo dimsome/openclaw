@@ -11,13 +11,11 @@ import type {
 import { createStorageMock } from "../test-helpers/storage.ts";
 import { createApplicationGateway } from "./gateway-store.ts";
 import { loadSettings } from "./settings.ts";
-
 export const GATEWAY_STORE_TEST_HELLO: GatewayHelloOk = {
   type: "hello-ok",
   protocol: 1,
   auth: { role: "operator", scopes: [] },
 };
-
 export function createGatewayEvent(
   event = "chat",
   payload: unknown = {},
@@ -25,22 +23,22 @@ export function createGatewayEvent(
 ): GatewayEventFrame {
   return { type: "event", event, payload, seq, stateVersion: { presence: seq, health: seq } };
 }
-
 const NativeGatewayBrowserClient = browserGateway.GatewayBrowserClient;
 const constructedOptions = new WeakMap<GatewayBrowserClient, GatewayBrowserClientOptions>();
-
-function captureGatewayClients(): void {
+export function captureGatewayClients(
+  observe?: (client: GatewayBrowserClient, options: GatewayBrowserClientOptions) => void,
+): void {
   const constructor = vi.spyOn(browserGateway, "GatewayBrowserClient").mockImplementation(
     class extends NativeGatewayBrowserClient {
       constructor(options: GatewayBrowserClientOptions) {
         super(options);
         constructedOptions.set(this, options);
+        observe?.(this, options);
       }
     },
   );
   onTestFinished(() => constructor.mockRestore());
 }
-
 function observeGatewayClient(client: GatewayBrowserClient) {
   const testOptions = expectDefined(
     constructedOptions.get(client),
@@ -68,31 +66,19 @@ function observeGatewayClient(client: GatewayBrowserClient) {
   });
   return observed;
 }
-
 export function createGatewayStoreTestStore(
-  params: {
+  params: NonNullable<Parameters<typeof createApplicationGateway>[3]> & {
     settings?: ReturnType<typeof loadSettings>;
     configureClient?: (client: ReturnType<typeof observeGatewayClient>) => void;
-    persistDefaultConnectionSettings?: boolean;
-    ownsWarmBoot?: boolean;
-    resourceBasePath?: string;
-    getModelCatalogTarget?: () => GatewayBrowserClientOptions["modelCatalog"];
-    clientOptions?: Pick<
-      GatewayBrowserClientOptions,
-      "clientName" | "mode" | "platform" | "deviceFamily" | "instanceId" | "scopes"
-    >;
   } = {},
 ) {
   captureGatewayClients();
   const clients: ReturnType<typeof observeGatewayClient>[] = [];
-  const observedClients = new WeakSet<GatewayBrowserClient>();
   const { settings = loadSettings(), configureClient, ...options } = params;
   const gateway = createApplicationGateway(settings, "", "", options);
   onTestFinished(
-    gateway.subscribe((snapshot) => {
-      const client = snapshot.client;
-      if (client && !observedClients.has(client)) {
-        observedClients.add(client);
+    gateway.subscribe(({ client }) => {
+      if (client && !clients.some((observed) => observed === client)) {
         const observed = observeGatewayClient(client);
         clients.push(observed);
         configureClient?.(observed);
@@ -101,7 +87,6 @@ export function createGatewayStoreTestStore(
   );
   return { gateway, clients, current: () => expectDefined(clients.at(-1), "gateway client") };
 }
-
 export function stubGatewayStoreTestGlobals() {
   vi.stubGlobal("localStorage", createStorageMock());
   vi.stubGlobal("sessionStorage", createStorageMock());
