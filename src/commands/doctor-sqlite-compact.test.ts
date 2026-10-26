@@ -82,6 +82,13 @@ it.each([false, true])("rejects an initial busy checkpoint (close fails=%s)", (c
   using writer = openNodeSqliteDatabase(sqlitePath);
   const closeFailure = new Error("native close failure");
   const afterSuccess = vi.fn();
+  const compact = () =>
+    compactDoctorSqliteFile({
+      sqlitePath,
+      operation: closeFails ? undefined : "import-finalize",
+      busyTimeoutMs: 0,
+      afterSuccess,
+    });
   if (closeFails) {
     const openDatabase = nodeSqlite.openNodeSqliteDatabase;
     vi.spyOn(nodeSqlite, "openNodeSqliteDatabase").mockImplementation((...args) => {
@@ -99,23 +106,13 @@ it.each([false, true])("rejects an initial busy checkpoint (close fails=%s)", (c
     writer.exec("INSERT INTO payload VALUES (2, 'pending checkpoint');");
     expect(writer.prepare("PRAGMA freelist_count").get()?.freelist_count).toBe(0);
     expect(fs.statSync(`${sqlitePath}-wal`).size).toBeGreaterThan(0);
-    if (!closeFails) {
-      expect(() =>
-        compactDoctorSqliteFile({
-          sqlitePath,
-          operation: "import-finalize",
-          busyTimeoutMs: 0,
-          afterSuccess,
-        }),
-      ).toThrow(/checkpoint remained busy/);
-      expect(afterSuccess).not.toHaveBeenCalled();
-      return;
-    }
-    expect(() => compactDoctorSqliteFile({ sqlitePath, busyTimeoutMs: 0, afterSuccess })).toThrow(
-      expect.objectContaining({
-        constructor: AggregateError,
-        errors: [expect.any(walCheckpoint.SqliteWalCheckpointBusyError), closeFailure],
-      }),
+    expect(compact).toThrow(
+      closeFails
+        ? expect.objectContaining({
+            constructor: AggregateError,
+            errors: [expect.any(walCheckpoint.SqliteWalCheckpointBusyError), closeFailure],
+          })
+        : /checkpoint remained busy/,
     );
     expect(afterSuccess).not.toHaveBeenCalled();
   } finally {

@@ -25,12 +25,8 @@ afterEach(() => vi.restoreAllMocks());
 
 it("warns without blocking for confirmed network SQLite storage, not unknown or cross-VM mounts", async () => {
   const root = syncFs.realpathSync(tempDirs.make("doctor-network-storage-"));
-  const state = {
-    stateDir: root,
-    statePath: (name: string) => path.join(root, name),
-    env: { HOME: root, OPENCLAW_STATE_DIR: root },
-  };
-  const file = state.statePath("state.sqlite");
+  const env = { HOME: root, OPENCLAW_STATE_DIR: root };
+  const file = path.join(root, "state.sqlite");
   const store = createDatabaseStoreDiagnostic({
     family: "state",
     path: file,
@@ -44,28 +40,32 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
     discoveryFailed: false,
     stores: [
       store,
-      { ...store, observed: "unknown", family: "agent", path: state.statePath("agent.sqlite") },
-      { ...store, observed: "postgres", path: state.statePath("postgres-anchor.sqlite") },
+      { ...store, observed: "unknown", family: "agent", path: path.join(root, "agent.sqlite") },
+      { ...store, observed: "postgres", path: path.join(root, "postgres-anchor.sqlite") },
     ],
   });
-  const nativeStatfs = syncFs.statfsSync(state.stateDir);
+  const networkFindings = async (options: Parameters<typeof noteDatabaseEngines>[1] = { env }) =>
+    (await noteDatabaseEngines({}, options)).filter((finding) =>
+      finding.message.includes("network filesystem"),
+    );
+  const nativeStatfs = syncFs.statfsSync(root);
   const statfs = vi.spyOn(syncFs, "statfsSync");
   const readFile = syncFs.readFileSync;
   const mountInfo = vi.spyOn(syncFs, "readFileSync");
   const mount = vi.spyOn(childProcess, "execFileSync");
   vi.spyOn(process, "platform", "get").mockReturnValue("linux");
 
-  for (const { type, magic, warning } of [
-    { type: "nfs4", magic: 0x6969, warning: true },
-    { type: "cifs", magic: 0xff534d42, warning: true },
-    { type: "nfs", magic: 0, warning: true },
-    { type: "smbfs", magic: 0, warning: true },
-    { type: "fuse.sshfs", magic: 0, warning: true },
-    { type: "virtiofs", magic: 0, warning: false },
-    { type: "9p", magic: 0x01021997, warning: false },
-    { type: "ext4", magic: 0, warning: false },
-    { type: "unknown", magic: 0, warning: false },
-  ]) {
+  for (const [type, magic, warning] of [
+    ["nfs4", 0x6969, true],
+    ["cifs", 0xff534d42, true],
+    ["nfs", 0, true],
+    ["smbfs", 0, true],
+    ["fuse.sshfs", 0, true],
+    ["virtiofs", 0, false],
+    ["9p", 0x01021997, false],
+    ["ext4", 0, false],
+    ["unknown", 0, false],
+  ] as const) {
     statfs.mockReturnValue(Object.assign(nativeStatfs, { type: magic }));
     if (type === "unknown") {
       statfs.mockImplementation(() => {
@@ -86,8 +86,7 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
     });
     mount.mockClear();
     vi.mocked(note).mockClear();
-    const findings = await noteDatabaseEngines({}, { env: state.env });
-    const network = findings.filter((finding) => finding.message.includes("network filesystem"));
+    const network = await networkFindings();
     expect(network, type).toHaveLength(warning ? 2 : 0);
     if (type === "unknown") {
       expect(mount).toHaveBeenCalledTimes(1);
@@ -105,29 +104,17 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
   const realpath = vi.spyOn(syncFs, "realpathSync").mockImplementation(() => {
     throw new Error("path permission denied");
   });
-  expect(
-    (await noteDatabaseEngines({}, { env: state.env })).filter((finding) =>
-      finding.message.includes("network filesystem"),
-    ),
-  ).toEqual([]);
+  expect(await networkFindings()).toEqual([]);
   realpath.mockRestore();
 
   vi.spyOn(process, "platform", "get").mockReturnValue("win32");
   const nativeRealpath = vi.spyOn(syncFs.realpathSync, "native");
-  for (const { target, resolved, warning } of [
-    { target: String.raw`\\nas\state\openclaw.sqlite`, resolved: undefined, warning: true },
-    {
-      target: String.raw`Z:\state\openclaw.sqlite`,
-      resolved: String.raw`\\nas\state\openclaw.sqlite`,
-      warning: true,
-    },
-    {
-      target: String.raw`C:\state\openclaw.sqlite`,
-      resolved: String.raw`C:\state`,
-      warning: false,
-    },
-    { target: String.raw`Z:\denied\openclaw.sqlite`, resolved: undefined, warning: false },
-  ]) {
+  for (const [target, resolved, warning] of [
+    [String.raw`\\nas\state\openclaw.sqlite`, undefined, true],
+    [String.raw`Z:\state\openclaw.sqlite`, String.raw`\\nas\state\openclaw.sqlite`, true],
+    [String.raw`C:\state\openclaw.sqlite`, String.raw`C:\state`, false],
+    [String.raw`Z:\denied\openclaw.sqlite`, undefined, false],
+  ] as const) {
     vi.mocked(engineInspection.inspectDoctorDatabaseEngines).mockResolvedValue({
       observed: {},
       stateRoots: [],
@@ -140,11 +127,6 @@ it("warns without blocking for confirmed network SQLite storage, not unknown or 
       }
       return resolved;
     });
-    expect(
-      (await noteDatabaseEngines({})).filter((finding) =>
-        finding.message.includes("network filesystem"),
-      ),
-      target,
-    ).toHaveLength(warning ? 1 : 0);
+    expect(await networkFindings({}), target).toHaveLength(warning ? 1 : 0);
   }
 });

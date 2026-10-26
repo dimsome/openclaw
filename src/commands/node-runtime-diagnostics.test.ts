@@ -17,6 +17,7 @@ const runtime = createTestRuntime();
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const tty = createCliTtyMock([process.stdout]);
 const contains = (text: string) => expect.stringContaining(text);
+const expectError = (text: string) => expect(runtime.error).toHaveBeenCalledWith(contains(text));
 const repairHint = contains("nvm install 26");
 const nodeCheck = "core/doctor/node-runtime";
 
@@ -96,7 +97,7 @@ it.each(["invalid config", "snapshot failure"])(
       "Node 24.15.0:",
       "nvm install 26",
     ]) {
-      expect(runtime.error).toHaveBeenCalledWith(contains(message));
+      expectError(message);
     }
     expect(runtime.error).not.toHaveBeenCalledWith(contains("undefined"));
   },
@@ -127,24 +128,19 @@ it("registers CLI and service Node repair findings", async () => {
   ]);
 });
 
-it.each([
-  [
-    { status: "unsupported", version: "24.22.0" },
-    "Gateway service Node 24.22.0 is unsupported.",
-    ["[info]", "undefined"],
-  ],
-  [
-    { status: "probe-failed", error: new Error("unavailable") },
-    "could not be inspected",
-    ["is unsupported"],
-  ],
-] as const)(
-  "renders service runtime %j without a misleading diagnosis",
-  async (info, present, absent) => {
+it.each(["unsupported", "probe-failed"] as const)(
+  "renders service runtime %s without a misleading diagnosis",
+  async (status) => {
+    const unsupported = status === "unsupported";
+    const info = unsupported
+      ? { status, version: "24.22.0" }
+      : { status, error: new Error("unavailable") };
     mocks.resolveNodeRuntimeInfo.mockResolvedValue(info);
     await statusCommand({ json: true }, runtime);
-    expect(runtime.error).toHaveBeenCalledWith(contains(present));
-    for (const message of absent) {
+    expectError(
+      unsupported ? "Gateway service Node 24.22.0 is unsupported." : "could not be inspected",
+    );
+    for (const message of unsupported ? ["[info]", "undefined"] : ["is unsupported"]) {
       expect(runtime.error).not.toHaveBeenCalledWith(contains(message));
     }
   },
