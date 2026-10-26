@@ -94,6 +94,7 @@ import {
   holdSpawnCapacity,
   prepareIsolatedChildAdmissionProof,
   recordSpawnBoundaryFinal,
+  runTalkSpawnBoundaryCase,
 } from "./subagent-spawn.production-boundary.test-support.js";
 import { registerRecoverySpawnCases } from "./subagent-spawn.recovery.test-support.js";
 import { registerRequestCustodySpawnCases } from "./subagent-spawn.request-custody.test-support.js";
@@ -425,6 +426,17 @@ describe("recursive spawn production boundary", () => {
     parentRunId,
     assertNoModelExecution: () => expect(runEmbeddedAgent).not.toHaveBeenCalled(),
   });
+
+  it.each(["authorized", "caller revoked", "Gateway replaced"] as const)(
+    "admits Talk consult children only under the original live authority: %s",
+    async (change) => {
+      expectDefined(runtimeConfig.agents?.defaults, "agent defaults").skipBootstrap = true;
+      await state.writeConfig(runtimeConfig);
+      clearConfigCache();
+      setRuntimeConfigSnapshot(runtimeConfig);
+      await runTalkSpawnBoundaryCase({ ...boundSpawnFixture, waitForEmbeddedRun }, change);
+    },
+  );
 
   it("admits an isolated descendant with current policy, saved thinking, and the active parent turn model", async () => {
     const customProvider = expectDefined(
