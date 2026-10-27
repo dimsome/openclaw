@@ -21,8 +21,8 @@ import type { GatewayRequestContext } from "../../../gateway/server-methods/type
 import { dispatchGatewayMethodInProcess } from "../../../gateway/server-plugin-in-process-dispatch.js";
 import { sharingPolicyClient } from "../../../gateway/session-sharing.test-utils.js";
 import { createTalkClientAgentConsultRunner } from "../../../gateway/talk/client-agent-consult.js";
-import { resolveTalkAgentConsultAuthority } from "../../../gateway/talk/client-gateway-control.js";
 import { retainTalkClientRunAuthority } from "../../../gateway/talk/client-run-authority.js";
+import { resolveTalkAgentConsultAuthority } from "../../../gateway/talk/client-tool-authority.js";
 import { prepareTalkSessionTarget } from "../../../gateway/talk/session-target.js";
 import { placementTurnOwner } from "../../../gateway/worker-environments/placement-record.js";
 import { createWorkerSessionPlacementStore } from "../../../gateway/worker-environments/placement-store.js";
