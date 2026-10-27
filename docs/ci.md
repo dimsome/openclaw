@@ -177,6 +177,15 @@ runner select both checks in the artifact producer on current targets, while the
 changed Node plan defers its boundary coverage to that producer. This opt-in does
 not enable unrelated proof-tier checks.
 
+Full and runtime-only compiled workers reserve separate live/cache slots, so
+runtime checks cannot replace a retained full generation. The protected warmer
+keeps its prebuild full seed for source-only Node shards and publishes the full
+generation already prepared by postbuild collection separately. Only selected
+source verifiers in the artifact producer restore that postbuild seed, keyed by
+the existing Node toolchain identity. A missing archive keeps their uncached path;
+an input, topology, runtime, or exact-output-path mismatch still compiles fresh.
+The producer creates no shared cache archive.
+
 Real-Gateway UI shards have a 30-minute whole-job budget on the normal Blacksmith
 path. Successful 16-class jobs reached 19:04, leaving too little margin under the
 former 20-minute limit. Hosted and retry paths retain their 40-minute budget;
@@ -351,6 +360,8 @@ When an ordinary PR, push, or scheduled run already selects the public artifact 
 When the public artifact build is already selected, current-target browser extension E2E and the selected production deployment fixtures run directly in `build-artifacts`, before mutable built-artifact verifiers. They reuse that exact checkout's public build without an extra checkout, runtime archive, or runner. Native-policy and published-driver consumers wait for this browser proof with the rest of the producer job. Standalone browser selections and frozen targets retain their local runtime build. Real-Gateway fixtures retain their separate private-QA preparation. The native-host, Doctor and SQLite built-CLI verifiers opt into the existing validated worker cache to reuse their identical runtime-only compiled worker graph sequentially within the producer job; TUI retains its separate heap configuration and worker preparation.
 
 Build, QA and test orchestration restore the same [protected Node compile cache](/ci/scope-and-routing/node-test-lanes). The trusted warmer populates build tools before collecting test imports. Scheduled and push warming use ordinary CI's Bun policy, retaining the runtime owner's Node-only exceptions; explicit workflow dispatches prime both runtimes for full validation. Optional full Node runs may start colder between manual dual-runtime warmings. Both Linux cache backends retain the same seven Control UI seed files on Node and the pinned Bun fork, and hosted tooling and contract seeds keep their existing runtime owners. Ordinary CI remains restore-only.
+
+Scheduled current-main artifact builds also [publish their completed build-all cache](/ci/pipeline#job-ordering-and-failure-reporting) without another declaration compile. The full warmer keeps its release profile; PRs and manual runs do not publish this archive.
 
 In-process Gateway test configs use [exclusive plan admission within existing packed jobs](/ci/capacity#measured-shard-weights).
 

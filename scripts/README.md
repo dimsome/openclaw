@@ -134,7 +134,9 @@ NODE_DISABLE_COMPILE_CACHE=1 node --import ./scripts/tsx.mjs scripts/bench-contr
 
 Use `--steps chat-typing,session-switch` for focused comparisons and `--trace`
 for separate Playwright/Inspector attribution runs. `--compare-bundle-dir` and
-`--control-bundle-dir` add candidate and A/A control builds. Reports retain the
+`--control-bundle-dir` add candidate and A/A control builds. Repeat the control
+option for interleaved base/head/base/head observations. For Workboard, repeat
+`--control-source-root` in the same order as the control bundles. Reports retain the
 metric time domain: WebKit Inspector durations are wall time, while Chromium
 CDP uses thread CPU. Untraced WebKit runs leave those counters null. `--cpu-only`
 collects WebKit's sampled process utilization without Timeline or ScriptProfiler;
@@ -156,6 +158,14 @@ do not measure a real Gateway's network latency.
 Mobile transcript-top uses a native scrollport jump because Playwright's mobile
 WebKit driver has no wheel input; it is not a wheel-latency measurement. Tracing
 omits DOM snapshots so snapshot traversal does not dominate attribution.
+
+Style/layout census can select the existing `settings-open`, `settings-sections`,
+and `data-*` actions together with `theme-switch-cycles` and
+`sidebar-live-style-cycles`. The latter exercise real preference and session
+lifecycle publications. `workboard-style-cycles` loads the native plugin and its
+1,000-card fixture, preserving its virtual window; use `--source-root`, `--compare-source-root`, and
+`--control-source-root` to bind its plugin assets to the corresponding bundle's
+source checkout. The manifest records each plugin tree and asset hash.
 
 Use `--steps memory --viewport desktop --pairs 1` for the opt-in cross-engine
 retention census, or select individual `memory-route-usage`,
