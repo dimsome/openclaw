@@ -1,4 +1,5 @@
 // Vitest ui e2e config wires the ui e2e test shard.
+import { fileURLToPath } from "node:url";
 import { defineConfig, type TestUserConfig } from "vitest/config";
 import { intersectIncludePatterns } from "./vitest.include-patterns.ts";
 import {
@@ -7,6 +8,7 @@ import {
   narrowIncludePatternsForCli,
   vitestE2eTestGlob,
 } from "./vitest.pattern-file.ts";
+import { createVitestProjectCachePlugin } from "./vitest.performance-config.ts";
 import { sharedVitestConfig } from "./vitest.shared.config.ts";
 import { UiE2eSequencer } from "./vitest.ui-e2e.sequencer.ts";
 import {
@@ -30,7 +32,6 @@ export const uiE2ePrivateServerTestFiles = [
   "ui/src/e2e/background-work.real-gateway.e2e.test.ts",
   "ui/src/e2e/boot-module-boundaries.e2e.test.ts",
   "ui/src/e2e/build-info-unicode.e2e.test.ts",
-  "ui/src/e2e/chat-source-reply-visibility.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-agent-avatar.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-collaborator-scroll.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-composer-websearch-kill-switch.real-gateway.e2e.test.ts",
@@ -41,7 +42,9 @@ export const uiE2ePrivateServerTestFiles = [
   "ui/src/e2e/chat-managed-media-order.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-project-media.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-reconnect-continuity.real-gateway.e2e.test.ts",
+  "ui/src/e2e/chat-session-companion-private.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-session-diff-folding.real-gateway.e2e.test.ts",
+  "ui/src/e2e/chat-source-reply-visibility.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-steer-deferred-custody.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-stop-finished-run.real-gateway.e2e.test.ts",
   "ui/src/e2e/chat-stop-owned-exec.real-gateway.e2e.test.ts",
@@ -122,7 +125,14 @@ export function createUiE2eVitestConfig(
   env: Record<string, string | undefined> = process.env,
   argv: string[] = process.argv,
 ) {
-  const base = sharedVitestConfig as Record<string, unknown>;
+  const base = {
+    ...sharedVitestConfig,
+    plugins: sharedVitestConfig.plugins.map((plugin) =>
+      plugin.name === "openclaw:vitest-project-cache"
+        ? createVitestProjectCachePlugin(fileURLToPath(import.meta.url))
+        : plugin,
+    ),
+  } as Record<string, unknown>;
   const baseTest = sharedVitestConfig.test ?? {};
   const maxWorkers = Math.min(2, baseTest.maxWorkers);
   const baseSequence = (baseTest as { sequence?: object }).sequence;
@@ -166,6 +176,7 @@ export function createUiE2eVitestConfig(
     pool: "forks",
     runner: undefined,
     setupFiles: [],
+    includeTaskLocation: true,
   };
   const bundledSetup = {
     globalSetup: [chromiumSetup, "test/vitest/vitest.ui-e2e.bundled.global-setup.ts"],
