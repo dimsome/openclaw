@@ -23,6 +23,17 @@ function createRegistryWithInstance(id = "swap", turnHandover = false) {
   return { registry, instance: addPlugin(registry, id, turnHandover) };
 }
 
+function createRetainedTurnControl(registry: PluginRegistry) {
+  const refresh = createAgentPluginRuntimeRefresh();
+  return refresh.run(() => {
+    // The attempt registers itself as the refresh consumer while it streams.
+    const captured = captureAgentPluginRuntimeRefresh();
+    captured.bindConsumer(() => true);
+    retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
+    return captured;
+  });
+}
+
 // Watchers and the handover decision each run on a microtask.
 const settle = () =>
   new Promise((resolve) => {
@@ -71,20 +82,6 @@ describe("plugin turn handover", () => {
     expect(instance.retainedWorkCount).toBe(1);
   });
 
-  it("keeps holds on a context-engine owner even when it declares turn handover", async () => {
-    const { registry, instance } = createRegistryWithInstance("swap", true);
-    registry.contextEngines.set("swap-engine", {
-      factory: () => ({}) as never,
-      owner: "plugin:swap",
-      lifecycle: "runtime",
-    });
-    retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
-
-    instance.reserveReplacement();
-    await settle();
-    expect(instance.retainedWorkCount).toBe(1);
-  });
-
   it("yields a whole-run hold outside a turn", async () => {
     const { registry, instance } = createRegistryWithInstance("swap", true);
     retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
@@ -97,13 +94,7 @@ describe("plugin turn handover", () => {
   it("keeps every hold when one reloaded plugin can't hand over", async () => {
     const { registry, instance: swap } = createRegistryWithInstance("swap", true);
     const pinned = addPlugin(registry, "pinned");
-    const refresh = createAgentPluginRuntimeRefresh();
-    const control = refresh.run(() => {
-      const captured = captureAgentPluginRuntimeRefresh();
-      captured.bindConsumer(() => true);
-      retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
-      return captured;
-    });
+    const control = createRetainedTurnControl(registry);
     const outer = retainRuntimePluginWork(
       [registry],
       "unknown",
@@ -123,14 +114,7 @@ describe("plugin turn handover", () => {
 
   it("asks a turn to hand over at its next step while its admitted calls still run", async () => {
     const { registry, instance } = createRegistryWithInstance("swap", true);
-    const refresh = createAgentPluginRuntimeRefresh();
-    const control = refresh.run(() => {
-      // The attempt registers itself as the refresh consumer while it streams.
-      const captured = captureAgentPluginRuntimeRefresh();
-      captured.bindConsumer(() => true);
-      retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
-      return captured;
-    });
+    const control = createRetainedTurnControl(registry);
 
     instance.reserveReplacement();
     await settle();
@@ -143,13 +127,7 @@ describe("plugin turn handover", () => {
 
   it("lets the run's own tool request win the refresh source", async () => {
     const { registry, instance } = createRegistryWithInstance("swap", true);
-    const refresh = createAgentPluginRuntimeRefresh();
-    const control = refresh.run(() => {
-      const captured = captureAgentPluginRuntimeRefresh();
-      captured.bindConsumer(() => true);
-      retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
-      return captured;
-    });
+    const control = createRetainedTurnControl(registry);
 
     control.request();
     instance.reserveReplacement();
@@ -160,13 +138,7 @@ describe("plugin turn handover", () => {
 
   it("continues only a turn that actually stopped at a step boundary", async () => {
     const { registry, instance } = createRegistryWithInstance("swap", true);
-    const refresh = createAgentPluginRuntimeRefresh();
-    const control = refresh.run(() => {
-      const captured = captureAgentPluginRuntimeRefresh();
-      captured.bindConsumer(() => true);
-      retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
-      return captured;
-    });
+    const control = createRetainedTurnControl(registry);
 
     instance.reserveReplacement();
     await settle();
@@ -178,13 +150,7 @@ describe("plugin turn handover", () => {
 
   it("drops a handover whose reload was cancelled before the next step", async () => {
     const { registry, instance } = createRegistryWithInstance("swap", true);
-    const refresh = createAgentPluginRuntimeRefresh();
-    const control = refresh.run(() => {
-      const captured = captureAgentPluginRuntimeRefresh();
-      captured.bindConsumer(() => true);
-      retainRuntimePluginWork([registry], "unknown", captureTurnHandoverRequest([registry]));
-      return captured;
-    });
+    const control = createRetainedTurnControl(registry);
 
     const cancel = instance.reserveReplacement();
     await settle();
